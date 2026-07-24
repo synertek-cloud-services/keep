@@ -1,0 +1,74 @@
+name: Release production
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+# Releases must never overlap: migrations and deployment are one ordered
+# transaction from the operator's perspective. Unlike Beacon (Worker + Pages
+# as two separate deploy targets), Keep is a single SvelteKit app deployed
+# as one Worker — no separate dashboard-build/deploy step needed.
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WORKER_URL: ${{ vars.PRODUCTION_WORKER_URL }}
+
+    steps:
+      - name: Check out the merged revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Deployment configuration is organization-specific and intentionally
+      # gitignored. Write it only for this ephemeral runner.
+      - name: Restore Worker deployment configuration
+        env:
+          WRANGLER_JSONC: ${{ secrets.WRANGLER_JSONC }}
+        run: |
+          test -n "$WRANGLER_JSONC"
+          test -n "$WORKER_URL"
+          umask 077
+          printf '%s' "$WRANGLER_JSONC" > wrangler.jsonc
+
+      - name: Generate Worker runtime types
+        run: pnpm exec wrangler types
+
+      # Additive migrations run first. If this fails, the previous deploy
+      # stays in service because later release steps never run.
+      - name: Apply production D1 migrations
+        run: pnpm exec wrangler d1 migrations apply keep --remote
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Deploy
+        run: pnpm exec wrangler deploy
+
+      - name: Verify production health
+        run: |
+          curl --fail --retry 5 --retry-delay 3 --retry-connrefused "$WORKER_URL/health"

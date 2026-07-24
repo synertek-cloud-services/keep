@@ -1,0 +1,36 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Cloudflare (org-specific — see wrangler.jsonc.example for the template)
+wrangler.jsonc
+.dev.vars
+# Generated from wrangler.jsonc via `wrangler types` — regenerate after copying
+# wrangler.jsonc.example, don't commit (it's derived from a gitignored file).
+/worker-configuration.d.ts
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Playwright MCP session artifacts
+.playwright-mcp/
+
+# Claude Code local session state
+/.claude/

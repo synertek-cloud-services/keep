@@ -1,0 +1,41 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "keep",
+	"account_id": "your-cloudflare-account-id", // find via: npx wrangler whoami
+	"compatibility_date": "2026-07-09",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+
+	// Custom domain route for production. Remove this block to use the
+	// default *.workers.dev subdomain instead.
+	"routes": [
+		{
+			"pattern": "your-domain.example.com",
+			"custom_domain": true
+		}
+	],
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "keep",
+			"database_id": "your-d1-database-id",
+			"migrations_dir": "migrations"
+		}
+	],
+
+	"observability": {
+		"logs": {
+			"enabled": true
+		}
+	}
+
+	// Secrets (set via `wrangler secret put <NAME>`, not declared here):
+	//   ADMIN_SECRET          — break-glass bootstrap/recovery bearer token
+	//   CONFIG_ENCRYPTION_KEY — 32 random bytes hex (e.g. `openssl rand -hex 32`),
+	//                           encrypts SSO provider client secrets at rest
+}
