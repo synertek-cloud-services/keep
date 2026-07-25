@@ -82,36 +82,72 @@ button { font-family: var(--font); }
 }
 .sidebar-brand-name { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
 
-.sidebar-section { padding: 12px 8px; }
-.sidebar-section-label {
-	font-size: 10px;
-	font-weight: 600;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	color: var(--color-text-muted);
-	padding: 0 12px 6px;
-}
+/* ── Sidebar accordion nav ─────────────────────────────────
+   Ported from Beacon's App.vue collapsible-section sidebar (same
+   interaction: every section stays visible as a header you click to
+   expand/collapse in place, multiple sections can be open at once) —
+   adapted to Keep's own CSS custom properties. See src/lib/navigation.ts
+   for the data catalog and src/lib/components/Sidebar.svelte for the
+   component. */
+.sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 8px 0; }
 
-.nav-item {
+.sec-head {
 	display: flex;
 	align-items: center;
-	gap: 9px;
-	padding: 7px 12px;
-	border-radius: var(--r-btn);
-	color: var(--color-text-subtle);
+	gap: 8px;
+	padding: 8px 14px;
 	cursor: pointer;
-	transition: background 0.12s, color 0.12s;
-	border-left: 2px solid transparent;
-	text-decoration: none;
-	font-size: 13px;
-	font-weight: 500;
-	margin-bottom: 1px;
+	user-select: none;
+	transition: background 0.1s;
+	flex-shrink: 0;
 }
-.nav-item:hover { background: var(--color-surface-raised); color: var(--color-text-primary); text-decoration: none; }
-.nav-item.active {
-	background: rgba(65, 105, 225, 0.1);
-	color: var(--color-primary);
-	border-left-color: var(--color-primary);
+.sec-head:hover { background: var(--color-surface-raised); }
+.sec-icon { width: 13px; height: 13px; color: var(--color-text-muted); flex-shrink: 0; opacity: 0.8; }
+.sec-label {
+	flex: 1;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--color-text-muted);
+}
+.sec-chevron {
+	width: 11px;
+	height: 11px;
+	color: var(--color-text-muted);
+	flex-shrink: 0;
+	transform: rotate(-90deg);
+	transition: transform 0.18s;
+}
+.sec-chevron.open { transform: rotate(0deg); }
+
+.sec-body { padding-bottom: 4px; }
+
+.sbi {
+	display: flex;
+	align-items: center;
+	padding: 5px 12px 5px 32px;
+	font-size: 12px;
+	color: var(--color-text-muted);
+	cursor: pointer;
+	border-radius: var(--r-btn);
+	margin: 1px 8px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	text-decoration: none;
+	transition: background 0.12s, color 0.12s;
+}
+.sbi:hover { background: var(--color-surface-raised); color: var(--color-text-primary); text-decoration: none; }
+.sbi.active { background: rgba(65, 105, 225, 0.1); color: var(--color-primary); font-weight: 500; }
+
+.sbi-group-label {
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-text-subtle);
+	padding: 6px 12px 2px 32px;
 }
 
 .main-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -178,6 +214,14 @@ tbody tr:last-child { border-bottom: none; }
 tbody tr:hover { background: var(--color-surface-raised); }
 tbody td { padding: 11px 16px; vertical-align: middle; }
 
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--color-text-primary); }
+.sort-chevron { width: 10px; height: 10px; margin-left: 4px; vertical-align: middle; transition: transform 0.1s; }
+.sort-chevron.is-asc { transform: rotate(180deg); }
+
+.pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-top: 1px solid var(--color-border); }
+.pagination-info { font-size: 11px; color: var(--color-text-subtle); }
+
 /* ── Badges ────────────────────────────────────────────────── */
 .badge {
 	display: inline-flex;
@@ -220,6 +264,7 @@ tbody td { padding: 11px 16px; vertical-align: middle; }
 .btn-ghost { background: transparent; color: var(--color-text-subtle); border: 1px solid var(--color-border-strong); }
 .btn-ghost:hover:not(:disabled) { color: var(--color-text-primary); border-color: var(--color-text-muted); background: var(--color-surface-raised); }
 .btn-sm { padding: 3px 10px; font-size: 11px; }
+.btn-icon { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* ── Form ──────────────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }

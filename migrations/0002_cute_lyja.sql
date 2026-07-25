@@ -1,0 +1,1 @@
+ALTER TABLE `ticket_counters` RENAME COLUMN "year" TO "date_key";

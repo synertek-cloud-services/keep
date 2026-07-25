@@ -4,6 +4,17 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-25 — Local dev bootstrap, dashboard donut-chart fix, fictional demo-data seeding
+
+First time actually running the app after the v1 scaffolding session — surfaced a few environment/UI gaps:
+
+- **Local dev environment bootstrap**: `node_modules` had never been installed in this checkout. Installed with `pnpm` (the repo's actual package manager, per `pnpm-lock.yaml`/`pnpm-workspace.yaml` — an earlier `npm install` in this session was a mistake, reverted before it could commit a stray `package-lock.json`). Applied local D1 migrations and hand-bootstrapped the first admin user per the CLAUDE.md recipe.
+- **Real bug found and fixed**: `DonutChart.svelte` (dashboard charts) had zero CSS anywhere in the codebase for its own classes — the `<svg>` had a `viewBox` but no constrained size, so it rendered oversized and overflowed into the legend text below. Added a scoped `<style>` block (110px fixed size, absolutely-positioned center label, flex legend) matching the rest of the app's design tokens. Verified live via a headless-Chromium login + screenshot (Playwright, installed to an isolated scratch dir — not added to `package.json`).
+- **New: fictional demo-data seeding**, mirroring Beacon's `scripts/demo-worlds.mjs`/`seed-demo.mjs` pattern for suite consistency — same five themes (Matrix, Minecraft, Holy Grail, Fallout, Star Trek). `scripts/demo-worlds.mjs` defines a shared 15-row ticket "blueprint" (status/priority/category/assignment/SLA-demo-state) applied to each world's companies/techs/titles, so every dashboard widget (unassigned/untriaged/breaches-today/needs-attention/open-by-status/-priority/-queue/tickets-per-tech/SLA-at-risk) has real data regardless of which world is seeded. `scripts/seed-demo.mjs` builds and applies the SQL (mirrors Beacon's `--world`/--local`/`--remote`/`--reset` CLI and non-empty-DB refusal safety), plus `scripts/test-demo-worlds.mjs` for structural validation. New Makefile targets: `seed-demo-local`, `seed-demo-reset`, `test-demo-worlds` (`WORLD ?= matrix`).
+  - Key departure from Beacon's version: the emptiness preflight checks `companies`/`tickets` counts, not `users` — Keep's demo techs are separate fictional fixtures (non-login: `password_hash` is `NULL`), so seeding coexists with an already-bootstrapped real admin. `--reset` still drops and re-migrates everything including `users`, so it does wipe a real admin — documented in the script's `--help` and the Makefile comment.
+  - SLA timestamps are expressed as `unixepoch() ± N` SQL expressions (not JS-computed absolute times) specifically to avoid clock-skew between the seed script's Node process and D1/SQLite, same reasoning as Beacon's `unixepoch()`-in-SQL convention.
+  - Verified live: seeded the Matrix world locally, confirmed every dashboard widget's counts against the blueprint by hand, and confirmed ticket list/detail pages render correctly (including a live "AT RISK" triage countdown) via headless-browser screenshots.
+
 ## 2026-07-24 — v1 scaffolding complete (all 11 phases)
 
 Built out the full v1 plan end-to-end in one session, all phases verified live (dev server + Playwright + direct D1 queries), not just type-checked:

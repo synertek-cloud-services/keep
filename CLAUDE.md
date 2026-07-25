@@ -22,7 +22,7 @@ src/
       db/            schema.ts (Drizzle) + index.ts (getDb(platform))
       auth/           session.ts, password.ts, oidc.ts, apiKeys.ts
       tickets.ts      Shared ticket core: createTicket/triage/setStatus/assign/clientReply/notes/timeEntries
-      ticketNumber.ts Atomic per-year sequential numbering
+      ticketNumber.ts Atomic per-day sequential numbering
       routing.ts      Issue-type -> queue resolution
       dashboardData.ts Widget aggregation queries
     components/      SlaCountdown.svelte, DonutChart.svelte

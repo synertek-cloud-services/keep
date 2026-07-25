@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `ticket_column_prefs` text;

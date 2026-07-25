@@ -3,8 +3,15 @@
 	import { page } from '$app/state';
 	import type { PageData } from './$types';
 	import { slaState } from '$lib/sla';
+	import { TICKET_COLUMNS } from '$lib/ticketColumns';
+	import { PAGE_SIZE_OPTIONS } from '$lib/ticketPageSize';
+	import ColumnChooserModal from '$lib/components/ColumnChooserModal.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	let chooserOpen = $state(false);
+	let columns = $derived(data.visibleColumns.map((key) => TICKET_COLUMNS.find((c) => c.key === key)!));
 
 	const statusLabels: Record<string, string> = {
 		triage: 'Triage',
@@ -22,13 +29,51 @@
 		url.searchParams.delete('all');
 		url.searchParams.delete('unassigned');
 		url.searchParams.delete('needsAttention');
+		url.searchParams.delete('page');
 		if (value) url.searchParams.set(name, value);
 		else url.searchParams.delete(name);
 		goto(url, { keepFocus: true, noScroll: true });
 	}
 
 	function quickFilter(name: 'mine' | 'all' | 'unassigned' | 'needsAttention') {
-		goto(`/tickets?${name}=1`, { keepFocus: true, noScroll: true });
+		const current = new URL(page.url);
+		const sort = current.searchParams.get('sort');
+		const dir = current.searchParams.get('dir');
+		const params = new URLSearchParams({ [name]: '1' });
+		if (sort) params.set('sort', sort);
+		if (dir) params.set('dir', dir);
+		goto(`/tickets?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	function setSort(key: string) {
+		const url = new URL(page.url);
+		const currentSort = url.searchParams.get('sort');
+		const currentDir = url.searchParams.get('dir');
+		const nextDir = currentSort === key && currentDir === 'asc' ? 'desc' : 'asc';
+		url.searchParams.set('sort', key);
+		url.searchParams.set('dir', nextDir);
+		url.searchParams.delete('page');
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
+	function goToPage(n: number) {
+		const url = new URL(page.url);
+		url.searchParams.set('page', String(n));
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
+	function setPageSize(n: number) {
+		// Persist as the user's remembered default (fire-and-forget — this
+		// view's own re-render below is what the user actually waits on).
+		const form = new FormData();
+		form.set('pageSize', String(n));
+		fetch('?/savePageSize', { method: 'POST', body: form });
+
+		// Apply immediately to the current view.
+		const url = new URL(page.url);
+		url.searchParams.set('pageSize', String(n));
+		url.searchParams.delete('page');
+		goto(url, { keepFocus: true, noScroll: true });
 	}
 
 	function rowSlaState(t: PageData['tickets'][number]): ReturnType<typeof slaState> {
@@ -97,40 +142,93 @@
 
 <div class="section-card">
 	<div class="section-card-head">
-		<span class="section-card-title">Tickets <span class="row-count-badge">{data.tickets.length}</span></span>
+		<span class="section-card-title">Tickets <span class="row-count-badge">{data.total}</span></span>
+		<button class="btn btn-ghost btn-sm" onclick={() => (chooserOpen = true)}>
+			<Icon name="columns" class="btn-icon" />
+			Columns
+		</button>
 	</div>
 	<table>
 		<thead>
 			<tr>
-				<th>Ticket</th>
-				<th>Title</th>
-				<th>Company</th>
-				<th>Queue</th>
-				<th>Status</th>
-				<th>Priority</th>
-				<th>SLA</th>
-				<th>Assigned</th>
+				{#each columns as col (col.key)}
+					{#if col.sortable}
+						<th class="sortable-th" onclick={() => setSort(col.key)}>
+							{col.label}
+							{#if data.sort === col.key}
+								<Icon name="chevron" class="sort-chevron {data.dir === 'asc' ? 'is-asc' : ''}" />
+							{/if}
+						</th>
+					{:else}
+						<th>{col.label}</th>
+					{/if}
+				{/each}
 			</tr>
 		</thead>
 		<tbody>
 			{#each data.tickets as t (t.id)}
 				{@const sla = rowSlaState(t)}
 				<tr onclick={() => goto(`/tickets/${t.id}`)} style="cursor: pointer;">
-					<td style="font-family: var(--mono); font-size: 11px;">{t.ticketNumber}</td>
-					<td>
-						{t.title}
-						{#if t.needsTechAttention}<span class="badge badge-warning" style="margin-left:6px;">Needs Attention</span>{/if}
-					</td>
-					<td>{t.companyName}</td>
-					<td>{t.queueName}</td>
-					<td><span class="badge badge-muted">{statusLabels[t.status]}</span></td>
-					<td>{t.priority ? t.priority : '—'}</td>
-					<td><span class="badge {slaBadgeClass[sla]}">{slaLabel[sla]}</span></td>
-					<td>{t.assignedResourceName ?? '—'}</td>
+					{#each columns as col (col.key)}
+						{#if col.key === 'ticketNumber'}
+							<td style="font-family: var(--mono); font-size: 11px;">{t.ticketNumber}</td>
+						{:else if col.key === 'title'}
+							<td>
+								{t.title}
+								{#if t.needsTechAttention}<span class="badge badge-warning" style="margin-left:6px;">Needs Attention</span>{/if}
+							</td>
+						{:else if col.key === 'company'}
+							<td>{t.companyName}</td>
+						{:else if col.key === 'queue'}
+							<td>{t.queueName}</td>
+						{:else if col.key === 'status'}
+							<td><span class="badge badge-muted">{statusLabels[t.status]}</span></td>
+						{:else if col.key === 'priority'}
+							<td>{t.priority ? t.priority : '—'}</td>
+						{:else if col.key === 'sla'}
+							<td><span class="badge {slaBadgeClass[sla]}">{slaLabel[sla]}</span></td>
+						{:else if col.key === 'assigned'}
+							<td>{t.assignedResourceName ?? '—'}</td>
+						{:else if col.key === 'contact'}
+							<td>{t.contactName ?? '—'}</td>
+						{:else if col.key === 'issueType'}
+							<td>{t.issueTypeName ?? '—'}</td>
+						{:else if col.key === 'source'}
+							<td>{t.source}</td>
+						{:else if col.key === 'createdAt'}
+							<td>{new Date(t.createdAt * 1000).toLocaleDateString()}</td>
+						{/if}
+					{/each}
 				</tr>
 			{:else}
-				<tr><td colspan="8" class="empty">No tickets match this view.</td></tr>
+				<tr><td colspan={columns.length} class="empty">No tickets match this view.</td></tr>
 			{/each}
 		</tbody>
 	</table>
+	<div class="pagination">
+		<div style="display:flex; gap:14px; align-items:center;">
+			<span class="pagination-info">
+				{#if data.total === 0}
+					No tickets
+				{:else}
+					Showing {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)} of {data.total}
+				{/if}
+			</span>
+			<label class="pagination-info" style="display:flex; align-items:center; gap:6px;">
+				Rows per page
+				<select value={data.pageSize} onchange={(e) => setPageSize(Number((e.currentTarget as HTMLSelectElement).value))}>
+					{#each PAGE_SIZE_OPTIONS as size (size)}
+						<option value={size}>{size}</option>
+					{/each}
+				</select>
+			</label>
+		</div>
+		<div style="display:flex; gap:8px; align-items:center;">
+			<button class="btn btn-ghost btn-sm" disabled={data.page <= 1} onclick={() => goToPage(data.page - 1)}>Prev</button>
+			<span class="pagination-info">Page {data.page} of {data.totalPages}</span>
+			<button class="btn btn-ghost btn-sm" disabled={data.page >= data.totalPages} onclick={() => goToPage(data.page + 1)}>Next</button>
+		</div>
+	</div>
 </div>
+
+<ColumnChooserModal bind:open={chooserOpen} visibleColumns={data.visibleColumns} />

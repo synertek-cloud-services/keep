@@ -12,24 +12,26 @@ beforeAll(async () => {
 });
 
 describe('claimTicketNumber', () => {
-	it('starts a fresh year at 1 and formats T-<year>-<padded 6 digits>', async () => {
+	it('starts a fresh day at 1 and formats T-<YYYYMMDD>-<padded 4 digits>', async () => {
 		const number = await claimTicketNumber(db, Date.UTC(2030, 0, 1) / 1000);
-		expect(number).toBe('T-2030-000001');
+		expect(number).toBe('T-20300101-0001');
 	});
 
-	it('increments sequentially within the same year', async () => {
+	it('increments sequentially within the same day', async () => {
 		const now = Date.UTC(2031, 5, 15) / 1000;
 		const a = await claimTicketNumber(db, now);
 		const b = await claimTicketNumber(db, now);
 		const c = await claimTicketNumber(db, now);
-		expect(a).toBe('T-2031-000001');
-		expect(b).toBe('T-2031-000002');
-		expect(c).toBe('T-2031-000003');
+		expect(a).toBe('T-20310615-0001');
+		expect(b).toBe('T-20310615-0002');
+		expect(c).toBe('T-20310615-0003');
 	});
 
-	it('starts a new counter for a different year independent of other years', async () => {
-		const y2032 = await claimTicketNumber(db, Date.UTC(2032, 0, 1) / 1000);
-		expect(y2032).toBe('T-2032-000001');
+	it('starts a new counter for a different day independent of other days', async () => {
+		const day1 = await claimTicketNumber(db, Date.UTC(2032, 0, 1) / 1000);
+		expect(day1).toBe('T-20320101-0001');
+		const day2 = await claimTicketNumber(db, Date.UTC(2032, 0, 2) / 1000);
+		expect(day2).toBe('T-20320102-0001');
 	});
 
 	// The regression this guards against: claiming via a separate SELECT then

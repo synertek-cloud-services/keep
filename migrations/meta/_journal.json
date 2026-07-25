@@ -15,6 +15,27 @@
       "when": 1784925933491,
       "tag": "0001_fat_queen_noir",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784948742556,
+      "tag": "0002_cute_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785010227843,
+      "tag": "0003_futuristic_wildside",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785013115541,
+      "tag": "0004_wet_spyke",
+      "breakpoints": true
     }
   ]
 }

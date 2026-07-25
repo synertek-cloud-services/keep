@@ -25,7 +25,16 @@ export const users = sqliteTable('users', {
 	ssoSubject: text('sso_subject'), // Entra `oid` claim; null for local accounts
 	createdAt: integer('created_at').notNull(),
 	updatedAt: integer('updated_at').notNull(),
-	lastLoginAt: integer('last_login_at')
+	lastLoginAt: integer('last_login_at'),
+	// JSON array of TicketColumnKey (see $lib/ticketColumns.ts), in display
+	// order. Null = not customized; renderer falls back to
+	// DEFAULT_TICKET_COLUMNS. Server-side, per-user — not localStorage —
+	// same cross-device-consistency reasoning as this app's session cookies.
+	ticketColumnPrefs: text('ticket_column_prefs'),
+	// One of PAGE_SIZE_OPTIONS (see $lib/ticketPageSize.ts). Null = not
+	// customized; renderer falls back to DEFAULT_PAGE_SIZE. Same
+	// per-user/server-side rationale as ticketColumnPrefs above.
+	ticketPageSize: integer('ticket_page_size')
 });
 
 export const userSessions = sqliteTable('user_sessions', {
@@ -215,12 +224,13 @@ export const apiKeys = sqliteTable('api_keys', {
 // Tickets, ticket numbering, notes, time entries
 // ─────────────────────────────────────────────────────────────────────────
 
-// Per-year sequential ticket-number counter. Claimed via a single atomic
+// Per-day sequential ticket-number counter, keyed by a UTC YYYYMMDD integer
+// (e.g. 20260725) — produces "T-20260725-0001". Claimed via a single atomic
 // UPSERT+RETURNING statement (see lib/server/ticketNumber.ts) — never
 // read-then-write. D1 serializes writes per-database through its primary, so
 // a single SQL statement is race-free without an app-level lock.
 export const ticketCounters = sqliteTable('ticket_counters', {
-	year: integer('year').primaryKey(),
+	dateKey: integer('date_key').primaryKey(),
 	nextNumber: integer('next_number').notNull().default(1)
 });
 
@@ -228,7 +238,7 @@ export const tickets = sqliteTable(
 	'tickets',
 	{
 		id: text('id').primaryKey(),
-		ticketNumber: text('ticket_number').notNull().unique(), // "T-2026-000482"
+		ticketNumber: text('ticket_number').notNull().unique(), // "T-20260725-0001"
 		title: text('title').notNull(),
 		description: text('description'),
 		status: text('status', {
