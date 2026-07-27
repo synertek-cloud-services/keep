@@ -4,6 +4,18 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd 7) — Session handoff after attachments
+
+Finished and pushed secure ticket attachments in commit `2202e09`. Activity now merges notes and attachment records chronologically; uploads default to Internal, validate organization size/MIME policy, write bytes to private R2, and store only metadata in D1. Downloads are authenticated, ticket-scoped, forced downloads with `nosniff`, and never reveal an R2 URL. Uploaders can delete their own files and admins can delete any. Admin → General Settings owns the 25 MB default and MIME allowlist. Migration `0013_misty_eddie_brock.sql` is applied to the local D1 database.
+
+Also removed all five existing Svelte reactivity warnings by making intentional one-time form initialization explicit and letting the column chooser synchronize when opened. Final verification: 68 tests pass, `pnpm check` has 0 errors/0 warnings, production build passes, working tree was clean at commit time, and no dev server is running.
+
+Next logical steps:
+
+1. Run a browser-level attachment pass with `pnpm dev`: upload, download, permission visibility, invalid MIME/oversize errors, delete, and Activity ordering.
+2. Decide whether attachment v2 needs image preview, malware scanning/quarantine, or client delivery before expanding the storage model; do not add these speculatively.
+3. Begin Timesheets using the existing immutable time-entry billing snapshots, then define contract consumption/invoicing behavior only when requirements are approved.
+
 ## 2026-07-27 (cont'd 6) — Ticket attachments
 
 Added ticket attachments as first-class Activity records. Technicians upload from the Activity quick-action row, choose internal or client-visible visibility, download through a session-gated ticket route, and may delete their own uploads while admins may delete any. File bytes live in the private `ATTACHMENTS` R2 binding; D1 stores ticket/uploader metadata only. Downloads are always forced rather than rendered inline and include `nosniff`.

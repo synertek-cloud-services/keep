@@ -4,8 +4,8 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 
 ## Architecture and workflow
 
-- Keep is one SvelteKit app deployed to Cloudflare Workers, with Cloudflare D1 accessed through Drizzle. Do not introduce a separate browser API/client layer: browser-facing features normally use colocated `load` functions and form actions.
-- Use the repository's actual package manager (`pnpm`) and the Makefile entry points: `make type-check`, `make test`, `make build`, and the database targets documented below. Do not create `package-lock.json`.
+- Keep is one SvelteKit app deployed to Cloudflare Workers, with Cloudflare D1 accessed through Drizzle and a private Cloudflare R2 bucket for ticket attachment bytes. Do not introduce a separate browser API/client layer: browser-facing features normally use colocated `load` functions and form actions.
+- Use the repository's actual package manager (`pnpm`). This environment does not provide `make`: use `pnpm check`, `pnpm test`, `pnpm build`, `pnpm exec drizzle-kit generate`, and `pnpm exec wrangler d1 migrations apply keep --local`. Do not create `package-lock.json`.
 - Access D1 from request context through `platform.env.DB`/`getDb(platform)`, never through a global or module-level connection.
 - Keep `worker-configuration.d.ts` wired into `src/app.d.ts`; a clean type-check can otherwise hide missing Cloudflare ambient types.
 - Never commit `wrangler.jsonc`, `.dev.vars`, `ADMIN_SECRET`, `CONFIG_ENCRYPTION_KEY`, raw session tokens, or raw API keys.
@@ -13,12 +13,12 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 ## Database and migrations
 
 - Follow the schema conventions in `src/lib/server/db/schema.ts`: app-assigned UUID text primary keys, integer Unix timestamps, integer booleans, and explicit joins rather than Drizzle's `relations()` API.
-- After editing `schema.ts`, **always** generate a migration with `make db-generate` (`drizzle-kit generate`). Never use `drizzle-kit push`.
+- After editing `schema.ts`, **always** generate a migration with `pnpm exec drizzle-kit generate`. Never use `drizzle-kit push`.
 - Never hand-edit a migration that may already have been applied. Make the next schema change and generate a new migration.
 - Generated migrations contain DDL only. For new required baseline/reference data, append deterministic `INSERT` statements to the newly generated migration before applying it.
 - Required product data belongs in migrations. Fictional/demo data belongs only in `scripts/demo-worlds.mjs` and `scripts/seed-demo.mjs`, invoked explicitly.
-- `make seed-demo-reset` is destructive: it rebuilds local D1 and deletes real users, including the bootstrapped admin. Do not run it without explicit authorization.
-- Stop `make dev` gracefully. Force-killing `workerd` can corrupt/lock local D1 state. Removing `.wrangler/state` is destructive and requires re-migration and admin bootstrap.
+- `node scripts/seed-demo.mjs --world <name> --local --reset --yes` is destructive: it rebuilds local D1 and deletes real users, including the bootstrapped admin. Do not run it without explicit authorization.
+- Stop `pnpm dev` gracefully. Force-killing `workerd` can corrupt/lock local D1 state. Removing `.wrangler/state` is destructive and requires re-migration and admin bootstrap.
 
 ## Authentication and authorization
 
@@ -54,6 +54,15 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 - Stable pagination requires SQL filtering, `LIMIT`/`OFFSET`, a matching `COUNT(*)`, and a deterministic final order term. Ticket sorting always uses `ticketNumber` as its tiebreaker; priority uses severity order rather than alphabetic order.
 - The ticket column catalog's `sortable` flags and `TicketSortKey` resolver are deliberately hand-synchronized. Do not derive one automatically from the other. SLA remains non-sortable because it is client-computed.
 
+## Attachments
+
+- Ticket attachment bytes live only in the private `ATTACHMENTS` R2 binding; D1's `attachments` table stores metadata, ownership, visibility, and an opaque unique `storageKey`. Never store file bodies in D1 or expose direct/public R2 URLs.
+- Uploads are ticket Activity actions. Validate non-empty size, the organization-wide byte limit, and normalized MIME allowlist before writing R2. Sanitize the display filename, generate the object key server-side, and remove the R2 object if the subsequent D1 insert fails.
+- Attachment downloads use the session-gated `(workspace)` route and must match both `ticketId` and `attachmentId`. Always force `Content-Disposition: attachment`, use `Cache-Control: private, no-store`, and set `X-Content-Type-Options: nosniff`.
+- Internal is the safe default, matching notes. The uploader may delete their attachment; an admin may delete any. Keep both upload and delete authorization server-side even when the UI hides unavailable actions.
+- Organization attachment policy lives in the singleton `organization_settings` row. Defaults are 25 MB and the MIME list in `src/lib/attachmentPolicy.ts`; parsing must fall back safely if stored JSON is malformed.
+- `wrangler.jsonc.example` contains the committed R2 binding template; real `wrangler.jsonc` remains gitignored. Demo worlds do not seed attachment rows because they cannot provide matching R2 objects.
+
 ## Navigation and styling
 
 - There is no component library or Tailwind. Use the tokens and generic classes in `src/app.css`, and keep shared token values synchronized with Beacon's `style.css`.
@@ -67,14 +76,15 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 ## Testing and verification
 
 - Add Vitest coverage in the same change for new business logic without a Beacon precedent, especially state machines, SLA/date math, routing, and concurrency-sensitive behavior.
-- Pure CRUD work generally requires `make type-check` plus proportionate manual verification; it does not need tests solely for coverage.
-- Run `make test` when changing shared business logic and `make type-check` for code changes. Run `make build` when changing deployment/runtime integration or before claiming production readiness.
+- Pure CRUD work generally requires `pnpm check` plus proportionate manual verification; it does not need tests solely for coverage.
+- Run `pnpm test` when changing shared business logic and `pnpm check` for code changes. Run `pnpm build` when changing deployment/runtime integration or before claiming production readiness.
 - Migration changes require generation, local application, type-checking, and—when risk warrants—a fresh-database migration check.
 - Do not claim Entra SSO or production deployment is verified based only on compilation or dry-run. The outstanding live checks are a real Entra token exchange and a real Cloudflare deployment.
 
 ## Current direction
 
-- V1 plus operational Contracts, organization timezone settings, and the configurable three-column ticket workspace is implemented, with local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
+- V1 plus operational Contracts, organization timezone/time-entry policy, Work Types, Resource Roles, the configurable three-column ticket workspace, and secure R2-backed ticket attachments is implemented. Local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, configurable ticket lists, and curated Companies/Contracts directories are also in place.
 - Contract money is integer cents, included time is integer minutes, and contract dates are UTC date-only epoch seconds. Preserve those representations and the one-default-per-company unique-index invariant.
-- Likely next work is building Timesheets, then contract consumption/invoicing rules only when requirements justify them.
+- The attachment milestone is commit `2202e09`; migration `0013_misty_eddie_brock.sql` is applied locally. At handoff, 68 tests pass, `pnpm check` reports 0 errors/0 warnings, the production build passes, and no dev server is running.
+- Likely next work is attachment polish (preview/virus-scanning or richer client-visible delivery only if requirements justify it), then Timesheets, then contract consumption/invoicing rules.
 - Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.
