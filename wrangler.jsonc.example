@@ -27,6 +27,12 @@
 			"migrations_dir": "migrations"
 		}
 	],
+	"r2_buckets": [
+		{
+			"binding": "ATTACHMENTS",
+			"bucket_name": "keep-attachments"
+		}
+	],
 
 	"observability": {
 		"logs": {

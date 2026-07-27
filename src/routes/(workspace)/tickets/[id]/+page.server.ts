@@ -19,6 +19,13 @@ import { utcDayStart } from '$lib/server/contracts';
 import { getOrganizationTimezone, ORGANIZATION_SETTINGS_ID } from '$lib/server/settings';
 import { parseTicketWorkspaceLayout, resolveTicketWorkspaceLayout } from '$lib/ticketWorkspace';
 import { addUtcDays, zonedDateTimeToEpoch } from '$lib/server/timeEntryTime';
+import {
+	DEFAULT_ALLOWED_ATTACHMENT_TYPES,
+	DEFAULT_MAX_ATTACHMENT_BYTES,
+	parseAllowedAttachmentTypes,
+	safeAttachmentFileName,
+	validateAttachment
+} from '$lib/attachmentPolicy';
 
 export const load: PageServerLoad = async ({ params, platform, locals }) => {
 	const db = getDb(platform!);
@@ -50,6 +57,23 @@ export const load: PageServerLoad = async ({ params, platform, locals }) => {
 		.innerJoin(schema.users, eq(schema.users.id, schema.notes.resourceId))
 		.where(eq(schema.notes.ticketId, params.id))
 		.orderBy(desc(schema.notes.createdAt))
+		.all();
+	const attachments = await db
+		.select({
+			id: schema.attachments.id,
+			fileName: schema.attachments.fileName,
+			contentType: schema.attachments.contentType,
+			sizeBytes: schema.attachments.sizeBytes,
+			visibility: schema.attachments.visibility,
+			createdAt: schema.attachments.createdAt,
+			uploaderId: schema.attachments.uploaderId,
+			uploaderName: schema.users.displayName,
+			uploaderEmail: schema.users.email
+		})
+		.from(schema.attachments)
+		.innerJoin(schema.users, eq(schema.users.id, schema.attachments.uploaderId))
+		.where(eq(schema.attachments.ticketId, params.id))
+		.orderBy(desc(schema.attachments.createdAt))
 		.all();
 
 	const timeEntries = await db
@@ -148,6 +172,7 @@ export const load: PageServerLoad = async ({ params, platform, locals }) => {
 		subIssueType,
 		assignedResource,
 		notes,
+		attachments,
 		timeEntries,
 		companies,
 		contacts,
@@ -287,6 +312,73 @@ export const actions: Actions = {
 		const db = getDb(platform!);
 		await addNote(db, { ticketId: params.id, resourceId: locals.user!.id, body, visibility });
 		return { success: true };
+	},
+
+	addAttachment: async ({ request, params, locals, platform }) => {
+		const form = await request.formData();
+		const candidate = form.get('file');
+		if (!(candidate instanceof File))
+			return fail(400, { error: 'Choose a file to attach.', keepAttachmentComposerOpen: true });
+		const db = getDb(platform!);
+		const settings = await db
+			.select({
+				maxAttachmentBytes: schema.organizationSettings.maxAttachmentBytes,
+				allowedAttachmentTypes: schema.organizationSettings.allowedAttachmentTypes
+			})
+			.from(schema.organizationSettings)
+			.where(eq(schema.organizationSettings.id, ORGANIZATION_SETTINGS_ID))
+			.get();
+		const validationError = validateAttachment(candidate, {
+			maxBytes: settings?.maxAttachmentBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES,
+			allowedTypes: parseAllowedAttachmentTypes(
+				settings?.allowedAttachmentTypes ?? JSON.stringify(DEFAULT_ALLOWED_ATTACHMENT_TYPES)
+			)
+		});
+		if (validationError)
+			return fail(400, { error: validationError, keepAttachmentComposerOpen: true });
+		const ticketExists = await db.select({ id: schema.tickets.id }).from(schema.tickets).where(eq(schema.tickets.id, params.id)).get();
+		if (!ticketExists) return fail(404, { error: 'Ticket not found.' });
+
+		const id = crypto.randomUUID();
+		const storageKey = `tickets/${params.id}/${id}`;
+		const contentType = candidate.type.trim().toLowerCase() || 'application/octet-stream';
+		await platform!.env.ATTACHMENTS.put(storageKey, candidate.stream(), {
+			httpMetadata: { contentType }
+		});
+		try {
+			await db.insert(schema.attachments).values({
+				id,
+				ticketId: params.id,
+				uploaderId: locals.user!.id,
+				fileName: safeAttachmentFileName(candidate.name),
+				contentType,
+				sizeBytes: candidate.size,
+				storageKey,
+				visibility: form.get('internal') === 'on' ? 'internal' : 'client_visible',
+				createdAt: Math.floor(Date.now() / 1000)
+			});
+		} catch (e) {
+			await platform!.env.ATTACHMENTS.delete(storageKey);
+			throw e;
+		}
+		return { success: true, attachmentSaved: true };
+	},
+
+	deleteAttachment: async ({ request, params, locals, platform }) => {
+		const form = await request.formData();
+		const attachmentId = String(form.get('attachmentId') ?? '');
+		const db = getDb(platform!);
+		const attachment = await db
+			.select()
+			.from(schema.attachments)
+			.where(and(eq(schema.attachments.id, attachmentId), eq(schema.attachments.ticketId, params.id)))
+			.get();
+		if (!attachment) return fail(404, { error: 'Attachment not found.' });
+		if (attachment.uploaderId !== locals.user!.id && locals.user!.role !== 'admin')
+			return fail(403, { error: 'Only the uploader or an admin can delete this attachment.' });
+		await db.delete(schema.attachments).where(eq(schema.attachments.id, attachmentId));
+		await platform!.env.ATTACHMENTS.delete(attachment.storageKey);
+		return { success: true, attachmentDeleted: true };
 	},
 
 	addTimeEntry: async ({ request, params, locals, platform }) => {

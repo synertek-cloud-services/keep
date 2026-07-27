@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { untrack } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
-	let selectedIssueTypeId = $state(data.issueTypes[0]?.id ?? '');
+	let selectedIssueTypeId = $state(untrack(() => data.issueTypes[0]?.id ?? ''));
 
 	let availableSubTypes = $derived(data.subIssueTypes.filter((s) => s.issueTypeId === selectedIssueTypeId));
 </script>

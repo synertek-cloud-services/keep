@@ -12,6 +12,10 @@ export const organizationSettings = sqliteTable('organization_settings', {
 	timeEntryIncrementMinutes: integer('time_entry_increment_minutes').notNull().default(5),
 	billingRoundingMinutes: integer('billing_rounding_minutes').notNull().default(15),
 	allowBillingOffset: integer('allow_billing_offset', { mode: 'boolean' }).notNull().default(true),
+	maxAttachmentBytes: integer('max_attachment_bytes').notNull().default(26214400),
+	allowedAttachmentTypes: text('allowed_attachment_types')
+		.notNull()
+		.default('["application/pdf","image/png","image/jpeg","text/plain","text/csv","application/zip"]'),
 	// Versioned JSON TicketWorkspaceLayout. Null falls back to the
 	// application default in $lib/ticketWorkspace.ts.
 	ticketWorkspaceLayout: text('ticket_workspace_layout'),
@@ -439,6 +443,24 @@ export const notes = sqliteTable('notes', {
 		.notNull()
 		.references(() => users.id),
 	body: text('body').notNull(),
+	visibility: text('visibility', { enum: ['internal', 'client_visible'] })
+		.notNull()
+		.default('internal'),
+	createdAt: integer('created_at').notNull()
+});
+
+export const attachments = sqliteTable('attachments', {
+	id: text('id').primaryKey(),
+	ticketId: text('ticket_id')
+		.notNull()
+		.references(() => tickets.id, { onDelete: 'cascade' }),
+	uploaderId: text('uploader_id')
+		.notNull()
+		.references(() => users.id),
+	fileName: text('file_name').notNull(),
+	contentType: text('content_type').notNull(),
+	sizeBytes: integer('size_bytes').notNull(),
+	storageKey: text('storage_key').notNull().unique(),
 	visibility: text('visibility', { enum: ['internal', 'client_visible'] })
 		.notNull()
 		.default('internal'),

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { untrack } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	let selectedCompanyId = $state(data.companies[0]?.id ?? '');
+	let selectedCompanyId = $state(untrack(() => data.companies[0]?.id ?? ''));
 	let selectedIssueTypeId = $state('');
 
 	let availableContacts = $derived(data.contacts.filter((c) => c.companyId === selectedCompanyId));

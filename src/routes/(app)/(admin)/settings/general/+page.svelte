@@ -40,6 +40,9 @@
 				<div class="field"><label for="billingRoundingMinutes">Default billing rounding</label><select id="billingRoundingMinutes" name="billingRoundingMinutes">{#each BILLING_ROUNDING_INCREMENTS as value}<option value={value} selected={data.billingRoundingMinutes === value}>{value === 0 ? 'No rounding' : `${value} minutes`}</option>{/each}</select></div>
 			</div>
 			<label class="check-row"><input type="checkbox" name="allowBillingOffset" checked={data.allowBillingOffset} /> Allow technicians to apply billing offsets</label>
+			<div class="pf-group-title time-title">Attachments</div>
+			<div class="field"><label for="maxAttachmentMegabytes">Maximum file size (MB)</label><input id="maxAttachmentMegabytes" name="maxAttachmentMegabytes" type="number" min="1" max="100" step="1" value={Math.round(data.maxAttachmentBytes / 1024 / 1024)} required /></div>
+			<div class="field"><label for="allowedAttachmentTypes">Allowed MIME types</label><textarea id="allowedAttachmentTypes" name="allowedAttachmentTypes" rows="6" required>{data.allowedAttachmentTypes.join('\n')}</textarea><p class="field-help">One MIME type per line. Files are always downloaded as attachments rather than rendered inline.</p></div>
 			<button class="btn btn-primary" type="submit">Save Settings</button>
 		</div>
 	</form>

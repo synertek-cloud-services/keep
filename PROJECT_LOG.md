@@ -4,6 +4,12 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd 6) — Ticket attachments
+
+Added ticket attachments as first-class Activity records. Technicians upload from the Activity quick-action row, choose internal or client-visible visibility, download through a session-gated ticket route, and may delete their own uploads while admins may delete any. File bytes live in the private `ATTACHMENTS` R2 binding; D1 stores ticket/uploader metadata only. Downloads are always forced rather than rendered inline and include `nosniff`.
+
+Admin → General Settings now controls the organization-wide maximum file size and MIME allowlist. Migration `0013_misty_eddie_brock.sql` creates attachment metadata and adds those settings with safe defaults. The demo reset dependency list includes attachment metadata, but intentionally does not seed fake files because D1 rows without matching R2 objects would be invalid.
+
 ## 2026-07-27 (cont'd 5) — Time-entry policy, Work Types, and Resource Roles
 
 Added organization-controlled working days, business hours, entry increments, default billing rounding, and billing-offset permission to General Settings. The ticket timeline now derives its visible window and drag increment from those settings rather than hard-coded values.

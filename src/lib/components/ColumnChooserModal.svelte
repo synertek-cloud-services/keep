@@ -4,7 +4,7 @@
 
 	let { open = $bindable(), visibleColumns }: { open: boolean; visibleColumns: TicketColumnKey[] } = $props();
 
-	let selected = $state<TicketColumnKey[]>([...visibleColumns]);
+	let selected = $state<TicketColumnKey[]>([]);
 	let available = $derived(TICKET_COLUMNS.map((c) => c.key).filter((k) => !selected.includes(k)));
 	let highlighted = $state<TicketColumnKey | null>(null);
 

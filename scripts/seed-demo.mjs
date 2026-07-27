@@ -25,7 +25,7 @@ const root = dirname(fileURLToPath(import.meta.url)) + '/..';
 // cannot span a reset. This deliberately ordered list drops child tables
 // before the parents they reference (see schema.ts for the FK graph).
 const resetTables = [
-	'notes', 'time_entries', 'user_resource_roles', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
+	'notes', 'time_entries', 'attachments', 'user_resource_roles', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
 	'sub_issue_types', 'sla_policy_priorities', 'user_sessions', 'sso_group_role_mappings',
 	'sso_login_state', 'users', 'dashboard_widgets', 'issue_types', 'queues', 'sla_policies', 'organization_settings',
 	'sso_providers', 'dashboards', 'ticket_counters', 'work_types', 'resource_roles', 'd1_migrations'

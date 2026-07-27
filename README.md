@@ -4,7 +4,7 @@ A lightweight PSA/helpdesk tool for small MSPs — Service Desk (tickets), Contr
 
 ## Stack
 
-SvelteKit (single app, server routes + rendered pages) on Cloudflare Workers via `@sveltejs/adapter-cloudflare`, Cloudflare D1 (SQLite) via Drizzle ORM, hand-rolled session auth with optional Microsoft Entra ID SSO.
+SvelteKit (single app, server routes + rendered pages) on Cloudflare Workers via `@sveltejs/adapter-cloudflare`, Cloudflare D1 (SQLite) via Drizzle ORM, private Cloudflare R2 storage for ticket attachments, and hand-rolled session auth with optional Microsoft Entra ID SSO.
 
 See `CLAUDE.md` for the AI-assistant-facing architecture reference and `AGENTS.md` for repo conventions/invariants.
 
@@ -13,6 +13,7 @@ See `CLAUDE.md` for the AI-assistant-facing architecture reference and `AGENTS.m
 ```bash
 pnpm install
 cp wrangler.jsonc.example wrangler.jsonc   # fill in your Cloudflare account/database IDs
+pnpm exec wrangler r2 bucket create keep-attachments  # once per Cloudflare account
 pnpm exec wrangler types                    # generates worker-configuration.d.ts (gitignored, regenerate after editing wrangler.jsonc)
 pnpm exec wrangler d1 migrations apply keep --local
 pnpm dev

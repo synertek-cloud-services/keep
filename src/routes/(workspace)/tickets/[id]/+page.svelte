@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 	import SlaCountdown from '$lib/components/SlaCountdown.svelte';
 	import TicketNumber from '$lib/components/TicketNumber.svelte';
 	import TicketWorkspaceEditor from '$lib/components/TicketWorkspaceEditor.svelte';
 	import TimeEntryTimeline from '$lib/components/TimeEntryTimeline.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { BILLING_MODEL_LABELS, formatCentsForInput } from '$lib/contracts';
 	import { calculateBillableMinutes } from '$lib/timeEntryBilling';
+	import { formatBytes } from '$lib/attachmentPolicy';
 	import type { TicketWorkspaceWidgetId } from '$lib/ticketWorkspace';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -15,6 +17,11 @@
 	let editingTicket = $state(false);
 	let editingWidget = $state<'customer' | 'classification' | null>(null);
 	let noteComposerOpen = $state(false);
+	let attachmentComposerOpen = $state(false);
+	$effect(() => {
+		if (form && 'keepAttachmentComposerOpen' in form && form.keepAttachmentComposerOpen)
+			attachmentComposerOpen = true;
+	});
 	// svelte-ignore state_referenced_locally
 	let logTimeOpen = $state(Boolean(form?.keepTimeModalOpen));
 	// svelte-ignore state_referenced_locally
@@ -35,8 +42,8 @@
 	let selectedResourceRoleId = $state(data.resourceRoles.find((item) => item.isDefault)?.id ?? data.resourceRoles[0]?.id ?? '');
 	let assignmentSaving = $state(false);
 	let assignmentSaved = $state(false);
-	let selectedCompanyId = $state(data.ticket.companyId);
-	let selectedIssueTypeId = $state(data.ticket.issueTypeId ?? '');
+	let selectedCompanyId = $state(untrack(() => data.ticket.companyId));
+	let selectedIssueTypeId = $state(untrack(() => data.ticket.issueTypeId ?? ''));
 	// svelte-ignore state_referenced_locally
 	let selectedContractId = $state(data.ticket.contractId ?? '');
 	let priorityChoice = $state<'critical' | 'high' | 'medium' | 'low' | ''>('');
@@ -66,6 +73,12 @@
 	let workedMinutes = $derived(data.timeEntries.reduce((total, entry) => total + entry.durationMinutes, 0));
 	let remainingMinutes = $derived(
 		data.ticket.estimatedMinutes == null ? null : Math.max(0, data.ticket.estimatedMinutes - workedMinutes)
+	);
+	let activityItems = $derived(
+		[
+			...data.notes.map((note) => ({ kind: 'note' as const, ...note })),
+			...data.attachments.map((attachment) => ({ kind: 'attachment' as const, ...attachment }))
+		].sort((a, b) => b.createdAt - a.createdAt)
 	);
 
 	function changeCompany(companyId: string) {
@@ -193,20 +206,33 @@
 		</section>
 	{:else if id === 'activity'}
 		<section class="workspace-widget activity-widget">
-			<div class="widget-heading"><h2>Activity <span class="row-count-badge">{data.notes.length}</span></h2><div class="quick-add-actions"><button class="btn btn-ghost btn-sm" type="button" onclick={() => (noteComposerOpen = !noteComposerOpen)}>+ New Note</button><button class="btn btn-primary btn-sm" type="button" onclick={() => (logTimeOpen = true)}>+ New Time Entry</button></div></div>
+			<div class="widget-heading"><h2>Activity <span class="row-count-badge">{activityItems.length}</span></h2><div class="quick-add-actions"><button class="btn btn-ghost btn-sm" type="button" onclick={() => (noteComposerOpen = !noteComposerOpen)}>+ New Note</button><button class="btn btn-ghost btn-sm" type="button" onclick={() => (attachmentComposerOpen = !attachmentComposerOpen)}><Icon name="paperclip" class="btn-icon" /> New Attachment</button><button class="btn btn-primary btn-sm" type="button" onclick={() => (logTimeOpen = true)}>+ New Time Entry</button></div></div>
 			{#if noteComposerOpen}
 				<form method="POST" action="?/addNote" use:enhance class="composer">
 					<div class="field"><label for="body">Add a note</label><textarea id="body" name="body" rows="3" required></textarea></div>
 					<div class="button-row"><label class="check-row"><input type="checkbox" name="internal" checked /> Internal note</label><button class="btn btn-ghost btn-sm" type="button" onclick={() => (noteComposerOpen = false)}>Cancel</button><button class="btn btn-primary btn-sm" type="submit">Add Note</button></div>
 				</form>
 			{/if}
+			{#if attachmentComposerOpen}
+				<form method="POST" action="?/addAttachment" enctype="multipart/form-data" class="composer attachment-composer">
+					<div class="field"><label for="attachmentFile">Choose file</label><input id="attachmentFile" name="file" type="file" required /></div>
+					<div class="button-row"><label class="check-row"><input type="checkbox" name="internal" checked /> Internal attachment</label><button class="btn btn-ghost btn-sm" type="button" onclick={() => (attachmentComposerOpen = false)}>Cancel</button><button class="btn btn-primary btn-sm" type="submit">Upload</button></div>
+				</form>
+			{/if}
 			<div class="activity-list">
-				{#each data.notes as note}
-					<article class="activity-item">
-						<div class="activity-meta"><strong>{note.resourceName ?? note.resourceEmail}</strong><span class="badge" class:badge-info={note.visibility === 'client_visible'} class:badge-muted={note.visibility === 'internal'}>{note.visibility === 'client_visible' ? 'Client-Visible' : 'Internal'}</span><time>{new Date(note.createdAt * 1000).toLocaleString()}</time></div>
-						<div class="note-body">{note.body}</div>
-					</article>
-				{:else}<div class="empty">No notes yet.</div>{/each}
+				{#each activityItems as item}
+					{#if item.kind === 'note'}
+						<article class="activity-item">
+							<div class="activity-meta"><strong>{item.resourceName ?? item.resourceEmail}</strong><span class="badge" class:badge-info={item.visibility === 'client_visible'} class:badge-muted={item.visibility === 'internal'}>{item.visibility === 'client_visible' ? 'Client-Visible' : 'Internal'}</span><time>{new Date(item.createdAt * 1000).toLocaleString()}</time></div>
+							<div class="note-body">{item.body}</div>
+						</article>
+					{:else}
+						<article class="activity-item attachment-item">
+							<div class="activity-meta"><strong>{item.uploaderName ?? item.uploaderEmail}</strong><span class="badge" class:badge-info={item.visibility === 'client_visible'} class:badge-muted={item.visibility === 'internal'}>{item.visibility === 'client_visible' ? 'Client-Visible' : 'Internal'}</span><time>{new Date(item.createdAt * 1000).toLocaleString()}</time></div>
+							<div class="attachment-row"><Icon name="paperclip" class="attachment-icon" /><div><a href={`/tickets/${data.ticket.id}/attachments/${item.id}`}>{item.fileName}</a><span>{formatBytes(item.sizeBytes)} · {item.contentType}</span></div>{#if item.uploaderId === data.user.id || data.user.role === 'admin'}<form method="POST" action="?/deleteAttachment"><input type="hidden" name="attachmentId" value={item.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>{/if}</div>
+						</article>
+					{/if}
+				{:else}<div class="empty">No activity yet.</div>{/each}
 			</div>
 		</section>
 	{:else if id === 'time-history'}
@@ -425,11 +451,18 @@
 	.required { margin-left:5px; color:var(--color-danger); font-size:9px; text-transform:uppercase; }
 	.status-picker { max-width:320px; margin:0; }
 	.composer { margin-bottom:6px; padding-bottom:14px; border-bottom:1px solid var(--color-border); }
+	.attachment-composer input[type='file'] { padding:6px; }
+	.attachment-composer input[type='file']::file-selector-button { margin-right:10px; padding:5px 10px; border:1px solid var(--color-border-strong); border-radius:var(--r-btn); background:var(--color-surface-raised); color:var(--color-text-primary); cursor:pointer; }
 	.activity-item { padding:14px 0; border-bottom:1px solid var(--color-border); }
 	.activity-item:last-child { border-bottom:0; }
 	.activity-meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-bottom:6px; font-size:11px; }
 	.activity-meta time { color:var(--color-text-subtle); }
 	.note-body { white-space:pre-wrap; font-size:13px; line-height:1.5; }
+	.attachment-row { display:flex; align-items:center; gap:9px; }
+	.attachment-row > div { display:flex; min-width:0; flex:1; flex-direction:column; gap:2px; }
+	.attachment-row a { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+	.attachment-row span { color:var(--color-text-subtle); font-size:10px; }
+	.attachment-icon { width:16px; height:16px; color:var(--color-text-muted); flex-shrink:0; }
 	.table-scroll { overflow-x:auto; }
 	.table-scroll table { min-width:620px; }
 	.internal-time-note { margin-top:4px; color:var(--color-text-subtle); font-size:10px; font-style:italic; }
