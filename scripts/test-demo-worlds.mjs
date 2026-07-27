@@ -10,10 +10,12 @@ for (const name of worldNames()) {
 	assert.doesNotMatch(sql, /undefined/);
 	assert.equal((sql.match(/INSERT INTO companies/g) ?? []).length, 3);
 	assert.equal((sql.match(/INSERT INTO contacts/g) ?? []).length, 3);
+	assert.equal((sql.match(/INSERT INTO contracts/g) ?? []).length, 3);
 	assert.equal((sql.match(/INSERT INTO users/g) ?? []).length, 3);
 	assert.equal((sql.match(/INSERT INTO queues/g) ?? []).length, 3);
 	assert.equal((sql.match(/INSERT INTO tickets/g) ?? []).length, BLUEPRINT.rowCount);
 	assert.equal((sql.match(/INSERT INTO ticket_counters/g) ?? []).length, 1);
+	assert.equal((sql.match(/UPDATE tickets SET contract_id/g) ?? []).length, 3);
 	assert.equal((sql.match(/'triage'/g) ?? []).length, 3, `${name}: expected 3 triage tickets`);
 	assert.equal((sql.match(/'resolved'/g) ?? []).length >= 2, true, `${name}: expected resolved tickets`);
 }

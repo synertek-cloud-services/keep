@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Seed a deliberately fictional Keep demo world — companies, contacts,
- * a few fictional techs, and a spread of tickets across every status/
+ * contracts, a few fictional techs, and a spread of tickets across every status/
  * priority/SLA state so the dashboard is never an empty canvas. Mirrors
  * Beacon's scripts/seed-demo.mjs pattern (same CLI shape, same reset
  * safety rules). This is never a migration: operators choose it
@@ -25,7 +25,7 @@ const root = dirname(fileURLToPath(import.meta.url)) + '/..';
 // cannot span a reset. This deliberately ordered list drops child tables
 // before the parents they reference (see schema.ts for the FK graph).
 const resetTables = [
-	'notes', 'time_entries', 'tickets', 'api_keys', 'routing_rules', 'contacts', 'companies',
+	'notes', 'time_entries', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
 	'sub_issue_types', 'sla_policy_priorities', 'user_sessions', 'sso_group_role_mappings',
 	'sso_login_state', 'users', 'dashboard_widgets', 'issue_types', 'queues', 'sla_policies',
 	'sso_providers', 'dashboards', 'ticket_counters', 'd1_migrations'
@@ -228,11 +228,15 @@ export function buildWorldSql(world, ticketStartNumber = 1) {
 
 	for (const company of world.companies) {
 		const cid = companyId.get(company.key);
+		const contractId = id(world, 'contract', company.key);
 		sql.push(
 			`INSERT INTO companies (id, name, type, status, sla_policy_id, default_billable, external_ref, created_at, updated_at) VALUES (${quote(cid)}, ${quote(company.name)}, 'client', 'active', 'sla-standard', 1, NULL, ${now}, ${now});`
 		);
 		sql.push(
 			`INSERT INTO contacts (id, company_id, name, email, phone, is_primary, created_at, updated_at) VALUES (${quote(id(world, 'contact', company.key))}, ${quote(cid)}, ${quote(company.contact)}, ${quote(`${company.key}@demo.invalid`)}, NULL, 1, ${now}, ${now});`
+		);
+		sql.push(
+			`INSERT INTO contracts (id, company_id, name, status, type, billing_model, start_date, end_date, fixed_fee_cents, included_minutes, hourly_rate_cents, is_default, created_at, updated_at) VALUES (${quote(contractId)}, ${quote(cid)}, ${quote(`${company.name} Managed Services`)}, 'active', 'recurring', 'included_hours', unixepoch(date('now', 'start of year')), unixepoch(date('now', 'start of year', '+1 year', '-1 day')), 0, 1200, 15000, 1, ${now}, ${now});`
 		);
 	}
 
@@ -307,6 +311,15 @@ export function buildWorldSql(world, ticketStartNumber = 1) {
 		);
 	}
 
+	// Demo tickets exercise the operational Contracts workflow too: every
+	// company has one eligible default contract and every seeded ticket is
+	// explicitly associated with it.
+	for (const company of world.companies) {
+		sql.push(
+			`UPDATE tickets SET contract_id = ${quote(id(world, 'contract', company.key))} WHERE company_id = ${quote(companyId.get(company.key))};`
+		);
+	}
+
 	const nextNumber = ticketStartNumber + BLUEPRINT.rowCount;
 	sql.push(
 		`INSERT INTO ticket_counters (date_key, next_number) VALUES (CAST(strftime('%Y%m%d', 'now') AS INTEGER), ${nextNumber}) ON CONFLICT(date_key) DO UPDATE SET next_number = ${nextNumber};`
@@ -363,9 +376,9 @@ export function run(options) {
 	executeSql(options, buildWorldSql(options.world, ticketStartNumber));
 	const [counts] = rows(
 		options,
-		'SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM tickets) AS tickets, (SELECT count(*) FROM users WHERE auth_source = \'local\' AND password_hash IS NULL) AS techs'
+		'SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM contracts) AS contracts, (SELECT count(*) FROM tickets) AS tickets, (SELECT count(*) FROM users WHERE auth_source = \'local\' AND password_hash IS NULL) AS techs'
 	);
-	console.log(`\nSeeded ${options.world.title}: ${counts.companies} companies, ${counts.tickets} tickets, ${counts.techs} demo techs.`);
+	console.log(`\nSeeded ${options.world.title}: ${counts.companies} companies, ${counts.contracts} contracts, ${counts.tickets} tickets, ${counts.techs} demo techs.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -10,6 +10,8 @@ Made Contracts operational in the service workflow. Shared `createTicket()` now 
 
 New time entries copy the ticket's contract plus billing model and hourly/overage rate into nullable historical fields. Ticket details now show eligible contract selection and display Contract + Billing Context per time row. Migration `0007_fixed_cargill.sql` adds the nullable references/snapshot columns without rewriting old data. Tests cover default resolution, cross-company rejection, ticket association stability, UTC eligibility dates, and time-entry billing snapshots.
 
+The demo seeder now understands the Contracts table in its safe reset dependency order and seeds one active default included-hours contract per fictional company, linking every demo ticket to its company's contract.
+
 ## 2026-07-27 (cont'd) — Contracts v1
 
 Added the first post-v1 business module: admin-managed Contracts. Contracts belong to companies and track Draft/Active/Expired/Terminated lifecycle, Recurring/Block Hours/Time & Materials type, fixed-fee/included-hours/hourly billing model, UTC date-only terms, integer-cent fees/rates, integer-minute included time, and an optional company-default flag enforced by a partial unique index. The directory follows the curated Companies UX—search by contract/company, status/type filters, sortable headers, SQL pagination, and remembered page size—rather than adding ticket-style column configuration.
