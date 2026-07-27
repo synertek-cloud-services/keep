@@ -1,39 +1,72 @@
 # Keep — AGENTS.md
 
-Repo conventions and invariants for AI assistants working in this codebase. See `CLAUDE.md` for architecture/context.
+Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architecture, `PROJECT_LOG.md` for current status and open work, and `STYLE.md` before changing UI patterns.
 
-## Migrations
+## Architecture and workflow
 
-- **Always** generate migrations via `make db-generate` (`drizzle-kit generate`) after editing `src/lib/server/db/schema.ts`. Never `drizzle-kit push`. Never hand-edit a migration file that's already been applied anywhere (local or remote) — edit `schema.ts` and generate a new migration instead.
-- `generate` only emits DDL. If a migration needs baseline seed data (a new reference table that should ship pre-populated), hand-append the `INSERT` statements to the generated file immediately after generating it, before running `migrate-local`.
-- Baseline/required seed data (SLA policy, issue taxonomy, default queue, default dashboard+widgets) lives in migrations. Demo/sample data (fictional companies/tickets for manual testing) does not exist yet in v1 — if built later, it belongs in a standalone `scripts/seed-demo.mjs`-style script, explicitly invoked, never automatic.
+- Keep is one SvelteKit app deployed to Cloudflare Workers, with Cloudflare D1 accessed through Drizzle. Do not introduce a separate browser API/client layer: browser-facing features normally use colocated `load` functions and form actions.
+- Use the repository's actual package manager (`pnpm`) and the Makefile entry points: `make type-check`, `make test`, `make build`, and the database targets documented below. Do not create `package-lock.json`.
+- Access D1 from request context through `platform.env.DB`/`getDb(platform)`, never through a global or module-level connection.
+- Keep `worker-configuration.d.ts` wired into `src/app.d.ts`; a clean type-check can otherwise hide missing Cloudflare ambient types.
+- Never commit `wrangler.jsonc`, `.dev.vars`, `ADMIN_SECRET`, `CONFIG_ENCRYPTION_KEY`, raw session tokens, or raw API keys.
 
-## Auth
+## Database and migrations
 
-- Every session-gated route relies on `locals.user`, set once in `src/hooks.server.ts`. Do not add a second, parallel way to check "is this user logged in" — if a route needs auth, it should be under `(app)/` or `(admin)/`, whose `+layout.server.ts` already gates on `locals.user`.
-- Do not hand-roll a bearer-token comparison anywhere in the session-auth path. The one deliberate exception is `/api/tickets/ingest`, which uses a *separate* scheme entirely (hashed API keys, `src/lib/server/auth/apiKeys.ts`) because it authenticates external systems, not Keep users — don't conflate the two, and don't route it through `locals.user`/session cookies.
-- Session tokens and API keys are never stored raw — only `sha256hex(token)`. If you're writing code that stores a token/key column, it should be named `*Hash` and the raw value should exist only transiently (in the cookie, or shown once at API-key creation).
+- Follow the schema conventions in `src/lib/server/db/schema.ts`: app-assigned UUID text primary keys, integer Unix timestamps, integer booleans, and explicit joins rather than Drizzle's `relations()` API.
+- After editing `schema.ts`, **always** generate a migration with `make db-generate` (`drizzle-kit generate`). Never use `drizzle-kit push`.
+- Never hand-edit a migration that may already have been applied. Make the next schema change and generate a new migration.
+- Generated migrations contain DDL only. For new required baseline/reference data, append deterministic `INSERT` statements to the newly generated migration before applying it.
+- Required product data belongs in migrations. Fictional/demo data belongs only in `scripts/demo-worlds.mjs` and `scripts/seed-demo.mjs`, invoked explicitly.
+- `make seed-demo-reset` is destructive: it rebuilds local D1 and deletes real users, including the bootstrapped admin. Do not run it without explicit authorization.
+- Stop `make dev` gracefully. Force-killing `workerd` can corrupt/lock local D1 state. Removing `.wrangler/state` is destructive and requires re-migration and admin bootstrap.
 
-## Ticket state machine
+## Authentication and authorization
 
-- Status changes go through the dedicated actions in `src/lib/server/tickets.ts` (`triageTicket`, `setStatus`, etc.), never a bare `UPDATE tickets SET status = ...`. `setStatus` validates against `TRANSITIONS` in `src/lib/sla.ts` — if you're adding a new status or transition, update `TRANSITIONS` first, don't bypass it.
-- `triage` has no direct transitions in `TRANSITIONS` — leaving it must go through `triageTicket`, which is the actual enforcement of "a ticket cannot leave Triage without a priority set." Don't add a code path that sets `status` away from `triage` without also requiring `priority`.
-- `responseDueAt`/`resolutionDueAt` are snapshotted once (at triage-exit or Integration-creation) and never recomputed from the current SLA policy afterward. If you're touching SLA-policy-edit code, do not make it retroactively update existing tickets' due dates — that's a deliberate invariant, not an oversight.
+- `src/hooks.server.ts` is the single session-resolution path and sets `locals.user`. Session-gated routes belong under `(app)/`; admin-only routes belong under `(admin)/`. Rely on their `+layout.server.ts` gates rather than adding parallel auth checks.
+- Browser sessions use the `keep_session` httpOnly cookie. Do not add bearer-token or `localStorage` session auth.
+- `/api/tickets/ingest` is the deliberate exception: it authenticates external systems with hashed API keys from `src/lib/server/auth/apiKeys.ts`, not Keep users. Do not route it through session auth.
+- Store only `sha256hex(token)`/`sha256hex(key)`, in columns named `*Hash`. Raw credentials may exist only transiently in a cookie or reveal-once response.
+- Keep the two roles (`admin` and `tech`) unless requirements explicitly change.
 
-## Ticket numbering
+## Ticket lifecycle, SLA, and numbering
 
-- `src/lib/server/ticketNumber.ts`'s claim is a single atomic `INSERT ... ON CONFLICT ... RETURNING` statement. Do not "simplify" this into a read-then-write (`SELECT next_number` followed by a separate `UPDATE`) — that reintroduces a race condition under concurrent ticket creation that the single-statement form specifically avoids.
+- All status changes go through the operations in `src/lib/server/tickets.ts`, such as `triageTicket` and `setStatus`; never issue a bare status update.
+- `setStatus` must enforce `TRANSITIONS` from `src/lib/sla.ts`. Update that transition table when deliberately changing the state machine rather than bypassing it.
+- A ticket cannot leave `triage` without a priority. `triage` intentionally has no ordinary transition; use `triageTicket`.
+- Integration tickets may start outside triage only because their priority is trusted and their SLA clocks begin at creation.
+- `responseDueAt` and `resolutionDueAt` are snapshots taken at triage exit or integration creation. SLA policy edits must never recalculate existing ticket deadlines.
+- Keep SLA-state math in the pure shared `src/lib/sla.ts` so server decisions and `SlaCountdown.svelte` cannot diverge.
+- Ticket-number claims must remain one atomic `INSERT ... ON CONFLICT ... RETURNING` statement in `src/lib/server/ticketNumber.ts`. Never replace it with read-then-write logic. The format is per-day `T-YYYYMMDD-XXXX`.
 
-## Routes
+## Routes and data flow
 
-- Register static path segments before parameterized ones where both exist under the same parent (SvelteKit resolves this by route specificity automatically in most cases, but keep it in mind when adding new nested routes under `tickets/[id]/`).
-- `src/routes/api/` is for machine-to-machine endpoints only (currently just ticket ingestion). Don't add browser-facing pages under `api/`, and don't add machine-facing JSON endpoints under `(app)/` or `(admin)/` unless they're small helpers for client-side interactivity within a page that's otherwise `load`/`actions`-driven (e.g. the dashboard widget drag/resize PATCH) — the default for anything else is a `load`/`actions` pair, not a hand-rolled fetch API.
+- `src/routes/api/` is for machine-to-machine endpoints. Do not place browser pages there.
+- Prefer SvelteKit `load`/actions for browser workflows. A small JSON helper under a page route is acceptable only for page-local interactivity, such as dashboard drag/resize.
+- Keep static path segments distinct from parameterized route usage when adding nested routes.
+- Ticket sort, filter, and page state stays in URL query parameters. Only column visibility and page-size defaults are persisted per user in D1, never in `localStorage`.
+- Stable pagination requires SQL filtering, `LIMIT`/`OFFSET`, a matching `COUNT(*)`, and a deterministic final order term. Ticket sorting always uses `ticketNumber` as its tiebreaker; priority uses severity order rather than alphabetic order.
+- The ticket column catalog's `sortable` flags and `TicketSortKey` resolver are deliberately hand-synchronized. Do not derive one automatically from the other. SLA remains non-sortable because it is client-computed.
 
-## Styling
+## Navigation and styling
 
-- No component library, no Tailwind. Shared design tokens and a small set of generic classes (`.section-card`, `.btn*`, `.field`, `.badge*`, `.stat-grid`, `.modal*`, `.pf-*` form shell) live in `src/app.css`, ported from Beacon's `style.css` — keep these two files' token values in sync if either changes; that consistency across the product suite is intentional.
-- Following Beacon's documented "duplication over sharing" convention: prefer a page repeating its own scoped `<style>` markup over inventing a new shared component for a one-off variation. The **one exception** is `src/lib/sla.ts` — SLA-state math is shared verbatim between server logic and the client-side `SlaCountdown.svelte`, because a live countdown that disagrees with the server's judgment is a correctness bug, not a style inconsistency.
+- There is no component library or Tailwind. Use the tokens and generic classes in `src/app.css`, and keep shared token values synchronized with Beacon's `style.css`.
+- Consult `STYLE.md` and the reference implementation before extending an established pattern: list cards, full-page forms, modals, accordion navigation, column chooser, sortable headers, or pagination.
+- Prefer scoped, page-local CSS duplication for one-off variations over creating premature shared components. Promote only genuine reusable patterns, then document them in `STYLE.md`.
+- Navigation is catalog-driven by `NAV_SECTIONS` in `src/lib/navigation.ts`. Add a top-level module there and add its routes; do not hard-code it into `Sidebar.svelte`.
+- Sidebar sections can use flat links or labeled groups and can be open simultaneously. Do not convert the established accordion into a single-open accordion.
+- Icons are statically authored in `Icon.svelte`; do not add an icon-library dependency or inject SVG with `{@html}`.
+- For list customization, follow the ticket list: stable typed catalogs, defensive preference parsing with safe defaults, server persistence, and render-by-key switching.
 
-## Testing
+## Testing and verification
 
-- New business logic with no Beacon precedent (state machines, date/SLA math, anything concurrency-sensitive) gets a `vitest` test in the same phase it's built, not deferred. Pure CRUD routes don't need tests — `make type-check` + manual verification is the bar there, matching Beacon's precedent.
+- Add Vitest coverage in the same change for new business logic without a Beacon precedent, especially state machines, SLA/date math, routing, and concurrency-sensitive behavior.
+- Pure CRUD work generally requires `make type-check` plus proportionate manual verification; it does not need tests solely for coverage.
+- Run `make test` when changing shared business logic and `make type-check` for code changes. Run `make build` when changing deployment/runtime integration or before claiming production readiness.
+- Migration changes require generation, local application, type-checking, and—when risk warrants—a fresh-database migration check.
+- Do not claim Entra SSO or production deployment is verified based only on compilation or dry-run. The outstanding live checks are a real Entra token exchange and a real Cloudflare deployment.
+
+## Current direction
+
+- V1 is implemented, with 38 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and the curated Companies directory pattern.
+- Likely next work is improving the Users list or adding Contracts and/or Timesheets through the catalog-driven navigation.
+- Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.

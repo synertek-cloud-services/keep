@@ -22,14 +22,16 @@ src/
     sla.ts             PURE — no DB. Shared between server logic and the client-side SLA countdown.
     navigation.ts      NAV_SECTIONS catalog driving the sidebar (see "Navigation" below)
     ticketColumns.ts   TICKET_COLUMNS catalog + per-user column-visibility resolution (see "Ticket list" below)
-    ticketPageSize.ts  Page-size catalog + per-user page-size resolution (see "Ticket list" below)
+    ticketPageSize.ts  Shared page-size catalog + per-user page-size resolution
+    listPreferences.ts Generic per-list preference parsing for newer list pages
     server/
       db/            schema.ts (Drizzle) + index.ts (getDb(platform))
       auth/           session.ts, password.ts, oidc.ts, apiKeys.ts
       tickets.ts      Shared ticket core: createTicket/triage/setStatus/assign/clientReply/notes/timeEntries
       ticketNumber.ts Atomic per-day sequential numbering
       ticketSort.ts   Validated sort-key set + Drizzle order-by resolution for the ticket list (see "Ticket list" below)
-      users.ts        Per-user ticket-list preference writes (updateTicketColumnPrefs/updateTicketPageSize)
+      companySort.ts  Validated company-directory sort resolution
+      users.ts        Per-user list-preference writes
       routing.ts      Issue-type -> queue resolution
       dashboardData.ts Widget aggregation queries
     components/      SlaCountdown.svelte, DonutChart.svelte, Sidebar.svelte, Icon.svelte, ColumnChooserModal.svelte
@@ -87,7 +89,7 @@ Cloudflare D1 (SQLite) via Drizzle ORM, `src/lib/server/db/schema.ts` — single
 
 **Generated via `drizzle-kit generate`, not hand-written.** This is the opposite of Beacon's current practice — Beacon's migration journal went stale at some point in its history (an artifact of manual edits/out-of-band DDL), so its `AGENTS.md` now forbids running `generate`. Keep starts clean and has no such baggage. Workflow: edit `schema.ts` → `make db-generate` → hand-append any baseline seed `INSERT`s to the newly generated file (generate only emits DDL, never data) → `make migrate-local` → `make type-check`. **Never** `drizzle-kit push`, **never** hand-edit an already-applied migration — that discipline is what keeps the journal from going stale the way Beacon's did.
 
-Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0004`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, and adding the two nullable per-user preference columns on `users` (`ticket_column_prefs`, `ticket_page_size`).
+Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0005`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, and adding per-user preference storage on `users` (`ticket_column_prefs`, `ticket_page_size`, `list_preferences`).
 
 ## Auth system
 
@@ -143,7 +145,11 @@ The ticket list (`(app)/tickets/+page.server.ts`/`+page.svelte`) is this app's f
 - **Column visibility**: `src/lib/ticketColumns.ts`'s `TICKET_COLUMNS` catalog (`{key, label, sortable?}`), a `ColumnChooserModal.svelte` two-pane Available/Selected picker (built on the generic `.modal-*` classes, not a new component pattern), persisted via a `saveColumns` form action to `users.ticketColumnPrefs` (nullable JSON array of column keys, resolved defensively by `resolveVisibleColumns()` — unknown/malformed keys are dropped, empty result falls back to `DEFAULT_TICKET_COLUMNS`, which is exactly today's original 8 columns in today's order so the feature is zero-visual-change until a user opens the chooser). The table itself renders by switching on `column.key` inside the row loop (same idiom as `Icon.svelte` — Svelte can't pass arbitrary render functions through a plain data array).
 - **Sorting**: `src/lib/server/ticketSort.ts` maps a validated `TicketSortKey` to the actual Drizzle order-by expression, server-side only (needs real schema/Drizzle imports, can't live in the client-safe `ticketColumns.ts`). Every sortable column gets a real `ORDER BY`; **priority sorts by severity via a SQL `CASE` expression, not alphabetically** (`'critical','high','low','medium'` alphabetical order is meaningless — the CASE ranks critical=1...low=4, NULL/untriaged=5). Every sort always appends `ticketNumber` as a tiebreaker — required for pagination to be stable (without a deterministic final order term, tied rows aren't guaranteed to land on the same page across two requests). `sla` is deliberately **not sortable** — it's a client-computed value (`rowSlaState()`/`slaState()`), not a single stored column, and reimplementing that branching as SQL wasn't worth it for one column. `TicketSortKey`'s member list and `TICKET_COLUMNS`' `sortable` flags are two small hand-synced lists, not derived from each other — deliberately, so a future column addition can't silently claim to be sortable via a type-level default.
 - **Pagination**: real SQL `LIMIT`/`OFFSET` plus a separate `COUNT(*)` query (same `conditions` array reused, no joins needed since every filter condition targets `tickets` columns directly). This required moving the app's original "open tickets only" default filter from a **post-query JS `.filter()`** into the SQL `WHERE` clause first — the two can't coexist with accurate paging. Page size is itself a per-user preference (`users.ticketPageSize`, options `15/25/50/100` in `src/lib/ticketPageSize.ts`, same persistence pattern as column prefs) with a URL-param override for one-off views.
-- **Per-user preferences, generally**: this app has exactly two — `ticketColumnPrefs` and `ticketPageSize`, both nullable columns on `users`, both server-side (not `localStorage`/cookies — same cross-device-consistency reasoning as the session-cookie-over-localStorage auth decision). Sort/page/filter *state* itself stays URL-query-param-driven like everything else on this page (not persisted) — only the user's column set and page size are "sticky" defaults.
+- **Per-user preferences, generally**: ticket columns/page size retain their original dedicated nullable columns on `users`; newer list pages use the `listPreferences` JSON object keyed by list name. All preferences are server-side (not `localStorage`/cookies — same cross-device-consistency reasoning as the session-cookie-over-localStorage auth decision). Sort/page/filter *state* stays URL-query-param-driven and ephemeral; only durable view defaults such as page size are sticky.
+
+## Companies directory
+
+Admin → Companies is the second paginated list and deliberately uses a lighter pattern than Tickets: fixed curated columns (company, primary contact, type, SLA policy, status), name/external-reference search, status/type filters, sortable headers, and SQL `COUNT`/`LIMIT`/`OFFSET`. It defaults to active companies sorted alphabetically. URL params hold search/filter/sort/page state; the remembered page size lives under the `companies` key in `users.listPreferences`. This is an Autotask-informed directory workflow, not a copy of its configuration density: there is intentionally no Companies column chooser.
 
 ## Ticket ingestion API
 

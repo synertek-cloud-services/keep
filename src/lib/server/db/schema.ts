@@ -34,7 +34,11 @@ export const users = sqliteTable('users', {
 	// One of PAGE_SIZE_OPTIONS (see $lib/ticketPageSize.ts). Null = not
 	// customized; renderer falls back to DEFAULT_PAGE_SIZE. Same
 	// per-user/server-side rationale as ticketColumnPrefs above.
-	ticketPageSize: integer('ticket_page_size')
+	ticketPageSize: integer('ticket_page_size'),
+	// JSON object keyed by list name for preferences shared by newer list
+	// pages (currently Companies). Ticket preferences retain their original
+	// dedicated columns until there is a concrete reason to migrate them.
+	listPreferences: text('list_preferences')
 });
 
 export const userSessions = sqliteTable('user_sessions', {

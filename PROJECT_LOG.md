@@ -4,6 +4,12 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 — Companies directory UX
+
+Upgraded Admin → Companies from an unbounded newest-first CRUD table to a focused directory workflow. The page now defaults to active companies alphabetically, searches by name/external reference, filters by status and type, sorts supported columns, and uses real SQL count/limit/offset pagination. Added the primary contact name/email to the curated five-column summary and distinct empty states for an empty database versus filters with no matches. Search/filter/sort/page state is URL-driven; page size is remembered server-side.
+
+This is deliberately Autotask-informed rather than a copy: Companies does not get the ticket list's column chooser because its useful summary is small and stable. Added a generic `users.list_preferences` JSON object for page-size defaults on newer list pages while leaving the proven ticket-specific preference columns untouched. Added defensive preference parsing and company sort-key tests.
+
 ## 2026-07-25 (cont'd) — Sidebar nav redesign, ticket-list columns/sort/pagination, committed by Codex
 
 Long session, same day as the local-dev-bootstrap/demo-data entry below. Everything landed in one commit (`ad3acad`, verified — see bottom of this entry).
