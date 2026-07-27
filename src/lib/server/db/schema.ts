@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -180,6 +181,41 @@ export const contacts = sqliteTable('contacts', {
 	createdAt: integer('created_at').notNull(),
 	updatedAt: integer('updated_at').notNull()
 });
+
+export const contracts = sqliteTable(
+	'contracts',
+	{
+		id: text('id').primaryKey(),
+		companyId: text('company_id')
+			.notNull()
+			.references(() => companies.id),
+		name: text('name').notNull(),
+		status: text('status', { enum: ['draft', 'active', 'expired', 'terminated'] })
+			.notNull()
+			.default('draft'),
+		type: text('type', { enum: ['recurring', 'block_hours', 'time_and_materials'] })
+			.notNull()
+			.default('recurring'),
+		billingModel: text('billing_model', { enum: ['fixed_fee', 'included_hours', 'hourly'] })
+			.notNull()
+			.default('included_hours'),
+		startDate: integer('start_date').notNull(),
+		endDate: integer('end_date'),
+		// Store currency as integer cents and included time as integer minutes;
+		// never use floating-point values for billing calculations.
+		fixedFeeCents: integer('fixed_fee_cents').notNull().default(0),
+		includedMinutes: integer('included_minutes').notNull().default(0),
+		hourlyRateCents: integer('hourly_rate_cents').notNull().default(0),
+		isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull()
+	},
+	(t) => [
+		uniqueIndex('contracts_one_default_per_company')
+			.on(t.companyId)
+			.where(sql`${t.isDefault} = 1`)
+	]
+);
 
 export const queues = sqliteTable('queues', {
 	id: text('id').primaryKey(),

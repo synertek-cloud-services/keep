@@ -4,6 +4,12 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd) — Contracts v1
+
+Added the first post-v1 business module: admin-managed Contracts. Contracts belong to companies and track Draft/Active/Expired/Terminated lifecycle, Recurring/Block Hours/Time & Materials type, fixed-fee/included-hours/hourly billing model, UTC date-only terms, integer-cent fees/rates, integer-minute included time, and an optional company-default flag enforced by a partial unique index. The directory follows the curated Companies UX—search by contract/company, status/type filters, sortable headers, SQL pagination, and remembered page size—rather than adding ticket-style column configuration.
+
+Contracts is a new top-level accordion section, validating the `NAV_SECTIONS` extension design without changes to `Sidebar.svelte`. Scope deliberately stops at term tracking: no invoicing, consumption math, or ticket/time-entry contract selection yet. Added pure date/currency/hour parsing tests and contract sort-key tests; migration `0006_wealthy_silver_sable.sql` creates the table and default-per-company index.
+
 ## 2026-07-27 — Companies directory UX
 
 Upgraded Admin → Companies from an unbounded newest-first CRUD table to a focused directory workflow. The page now defaults to active companies alphabetically, searches by name/external reference, filters by status and type, sorts supported columns, and uses real SQL count/limit/offset pagination. Added the primary contact name/email to the curated five-column summary and distinct empty states for an empty database versus filters with no matches. Search/filter/sort/page state is URL-driven; page size is remembered server-side.

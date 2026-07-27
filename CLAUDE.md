@@ -20,6 +20,7 @@ src/
   hooks.server.ts  Resolves session cookie -> locals.user on every request
   lib/
     sla.ts             PURE — no DB. Shared between server logic and the client-side SLA countdown.
+    contracts.ts       Contract catalogs + pure date/currency/hour parsing.
     navigation.ts      NAV_SECTIONS catalog driving the sidebar (see "Navigation" below)
     ticketColumns.ts   TICKET_COLUMNS catalog + per-user column-visibility resolution (see "Ticket list" below)
     ticketPageSize.ts  Shared page-size catalog + per-user page-size resolution
@@ -31,6 +32,7 @@ src/
       ticketNumber.ts Atomic per-day sequential numbering
       ticketSort.ts   Validated sort-key set + Drizzle order-by resolution for the ticket list (see "Ticket list" below)
       companySort.ts  Validated company-directory sort resolution
+      contractSort.ts Validated Contracts-directory sort resolution
       users.ts        Per-user list-preference writes
       routing.ts      Issue-type -> queue resolution
       dashboardData.ts Widget aggregation queries
@@ -89,7 +91,7 @@ Cloudflare D1 (SQLite) via Drizzle ORM, `src/lib/server/db/schema.ts` — single
 
 **Generated via `drizzle-kit generate`, not hand-written.** This is the opposite of Beacon's current practice — Beacon's migration journal went stale at some point in its history (an artifact of manual edits/out-of-band DDL), so its `AGENTS.md` now forbids running `generate`. Keep starts clean and has no such baggage. Workflow: edit `schema.ts` → `make db-generate` → hand-append any baseline seed `INSERT`s to the newly generated file (generate only emits DDL, never data) → `make migrate-local` → `make type-check`. **Never** `drizzle-kit push`, **never** hand-edit an already-applied migration — that discipline is what keeps the journal from going stale the way Beacon's did.
 
-Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0005`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, and adding per-user preference storage on `users` (`ticket_column_prefs`, `ticket_page_size`, `list_preferences`).
+Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0006`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, adding per-user preference storage on `users`, and adding Contracts.
 
 ## Auth system
 
@@ -130,7 +132,7 @@ One system default dashboard (`is_default=1`), normalized `dashboard_widgets` ta
 
 ## Navigation
 
-Sidebar is a Beacon-ported accordion (`src/lib/components/Sidebar.svelte`), not a flat link list: every section stays visible as a collapsible header (icon + label + chevron) that toggles independently — multiple sections can be open at once, it's not a single-open accordion. Fully data-driven off `src/lib/navigation.ts`'s `NAV_SECTIONS` catalog (same "const array of typed objects with a stable key" idiom used throughout this codebase — see `WIDGET_TYPES`/`TICKET_COLUMNS`). Current order: Dashboard, Service Desk, Admin.
+Sidebar is a Beacon-ported accordion (`src/lib/components/Sidebar.svelte`), not a flat link list: every section stays visible as a collapsible header (icon + label + chevron) that toggles independently — multiple sections can be open at once, it's not a single-open accordion. Fully data-driven off `src/lib/navigation.ts`'s `NAV_SECTIONS` catalog (same "const array of typed objects with a stable key" idiom used throughout this codebase — see `WIDGET_TYPES`/`TICKET_COLUMNS`). Current order: Dashboard, Service Desk, Contracts, Admin.
 
 A section's links can be flat (`links`) or organized into labeled sub-clusters (`groups`, e.g. Admin's "Service Desk"/"Access" clusters) — this exists so a section doesn't itself recreate the flat-list-crowding problem as it grows (Admin already mixes cross-cutting settings like Users/SSO/API Keys with what's really per-module config like Queues/SLA Policies/Issue Types/Routing Rules). **Adding a future top-level module (Contracts, Timesheets, etc. — all on the near-term roadmap) is one more `NAV_SECTIONS` entry plus its routes — no `Sidebar.svelte`/`app.css` changes needed.** That extensibility was the explicit design goal.
 
@@ -150,6 +152,10 @@ The ticket list (`(app)/tickets/+page.server.ts`/`+page.svelte`) is this app's f
 ## Companies directory
 
 Admin → Companies is the second paginated list and deliberately uses a lighter pattern than Tickets: fixed curated columns (company, primary contact, type, SLA policy, status), name/external-reference search, status/type filters, sortable headers, and SQL `COUNT`/`LIMIT`/`OFFSET`. It defaults to active companies sorted alphabetically. URL params hold search/filter/sort/page state; the remembered page size lives under the `companies` key in `users.listPreferences`. This is an Autotask-informed directory workflow, not a copy of its configuration density: there is intentionally no Companies column chooser.
+
+## Contracts
+
+Contracts is an admin-managed top-level module under `(app)/(admin)/contracts`. A contract belongs to one company and records lifecycle status, type, billing model, date-only UTC start/end values, fixed fee, included minutes, hourly/overage rate, and whether it is the company's default. Currency is always stored as integer cents and included time as integer minutes; the partial unique index `contracts_one_default_per_company` enforces at most one default contract per company. The directory uses the same curated search/filter/sort/pagination pattern as Companies, with its page-size preference under the `contracts` key in `users.listPreferences`. This is contract-term tracking only: invoice generation, consumption calculations, and ticket/time-entry selection are deferred.
 
 ## Ticket ingestion API
 

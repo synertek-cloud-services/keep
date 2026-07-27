@@ -67,6 +67,7 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 
 ## Current direction
 
-- V1 is implemented, with 38 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and the curated Companies directory pattern.
-- Likely next work is improving the Users list or adding Contracts and/or Timesheets through the catalog-driven navigation.
+- V1 plus Contracts term tracking is implemented, with 43 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
+- Contract money is integer cents, included time is integer minutes, and contract dates are UTC date-only epoch seconds. Preserve those representations and the one-default-per-company unique-index invariant.
+- Likely next work is connecting contracts to ticket/time-entry workflows, building Timesheets, or improving the Users list.
 - Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.

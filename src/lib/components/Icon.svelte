@@ -18,6 +18,12 @@
 		<path d="M2 9a3 3 0 0 1 0 6v3a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3a3 3 0 0 1 0-6V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
 		<path d="M13 5v2" /><path d="M13 11v2" /><path d="M13 17v2" />
 	</svg>
+{:else if name === 'contract'}
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={className}>
+		<path d="M6 3h9l4 4v14H6z" />
+		<path d="M14 3v5h5" />
+		<path d="M9 12h7M9 16h7" />
+	</svg>
 {:else if name === 'chevron'}
 	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={className}>
 		<polyline points="6 9 12 15 18 9" />

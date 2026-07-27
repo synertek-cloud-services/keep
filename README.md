@@ -1,6 +1,6 @@
 # Keep
 
-A lightweight PSA/helpdesk tool for small MSPs — Service Desk (tickets), Dashboards, and Admin. Part of the Beacon/Keep/Sanctum suite built for Synertek Cloud Services. Intentionally scoped down from a full PSA (like Autotask): no contracts/billing/rate cards, no CRM, no projects, no knowledge base. Pay-as-you-need, no bloat.
+A lightweight PSA/helpdesk tool for small MSPs — Service Desk (tickets), Contracts, Dashboards, and Admin. Part of the Beacon/Keep/Sanctum suite built for Synertek Cloud Services. Intentionally scoped down from a full PSA (like Autotask): focused contract terms without a full invoicing engine, and no CRM, projects, or knowledge base. Pay-as-you-need, no bloat.
 
 ## Stack
 
@@ -13,24 +13,22 @@ See `CLAUDE.md` for the AI-assistant-facing architecture reference and `AGENTS.m
 ```bash
 pnpm install
 cp wrangler.jsonc.example wrangler.jsonc   # fill in your Cloudflare account/database IDs
-npx wrangler types                          # generates worker-configuration.d.ts (gitignored, regenerate after editing wrangler.jsonc)
-make migrate-local                          # apply D1 migrations to local SQLite
-make dev                                     # vite dev server
+pnpm exec wrangler types                    # generates worker-configuration.d.ts (gitignored, regenerate after editing wrangler.jsonc)
+pnpm exec wrangler d1 migrations apply keep --local
+pnpm dev
 ```
 
-First admin user is bootstrapped by hand — see `AGENTS.md` → "Bootstrapping the first admin".
+First admin user is bootstrapped by hand — see `CLAUDE.md` → "Bootstrapping the first admin".
 
 ## Commands
 
 ```bash
-make dev              # vite dev
-make build             # production build
-make deploy             # build + wrangler deploy
-make migrate-local      # apply pending D1 migrations locally
-make migrate-remote     # apply pending D1 migrations to production
-make db-generate        # drizzle-kit generate (schema.ts -> migrations/)
-make type-check         # svelte-kit sync + svelte-check
-make test               # vitest run
+pnpm dev                          # vite dev
+pnpm build                        # production build
+pnpm check                        # svelte-kit sync + svelte-check
+pnpm test                         # vitest run
+pnpm exec drizzle-kit generate    # schema.ts -> migrations/
+pnpm exec wrangler d1 migrations apply keep --local
 ```
 
 ## License
