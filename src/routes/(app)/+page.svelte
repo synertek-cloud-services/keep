@@ -3,6 +3,7 @@
 	import type { PageData } from './$types';
 	import DonutChart from '$lib/components/DonutChart.svelte';
 	import TicketNumber from '$lib/components/TicketNumber.svelte';
+	import { openTicketWorkspace } from '$lib/ticketWorkspaceWindow';
 
 	// Fixed palette so chart segment colors stay consistent across reloads.
 	const PALETTE = ['#4169e1', '#2dcfa0', '#f0a840', '#e8566a', '#a2a8c1', '#7f86a3'];
@@ -171,8 +172,8 @@
 					<table>
 						<tbody>
 							{#each data.data.lists.oldestOpenTickets as t (t.id)}
-								<tr onclick={() => (window.location.href = `/tickets/${t.id}`)} style="cursor:pointer;">
-									<td><TicketNumber value={t.ticketNumber} /></td>
+								<tr onclick={() => openTicketWorkspace(t.id)} style="cursor:pointer;">
+									<td><a href={`/tickets/${t.id}`} onclick={(event) => { event.preventDefault(); event.stopPropagation(); openTicketWorkspace(t.id); }}><TicketNumber value={t.ticketNumber} /></a></td>
 									<td>{t.title}</td>
 									<td style="color: var(--color-text-muted);">{t.companyName}</td>
 								</tr>
@@ -204,8 +205,8 @@
 					<table>
 						<tbody>
 							{#each data.data.lists.slaAtRiskTickets as t (t.id)}
-								<tr onclick={() => (window.location.href = `/tickets/${t.id}`)} style="cursor:pointer;">
-									<td><TicketNumber value={t.ticketNumber} /></td>
+								<tr onclick={() => openTicketWorkspace(t.id)} style="cursor:pointer;">
+									<td><a href={`/tickets/${t.id}`} onclick={(event) => { event.preventDefault(); event.stopPropagation(); openTicketWorkspace(t.id); }}><TicketNumber value={t.ticketNumber} /></a></td>
 									<td>{t.title}</td>
 									<td><span class="badge badge-warning">{t.slaLabel}</span></td>
 								</tr>

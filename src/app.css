@@ -6,6 +6,7 @@
    product suite. Values are identical on purpose — do not drift these
    without a deliberate cross-product design decision. */
 :root {
+	color-scheme: dark;
 	--color-canvas: #0c0e16;
 	--color-surface: #141720;
 	--color-surface-raised: #1c1f2e;
@@ -46,6 +47,14 @@ html, body {
 a { color: var(--color-primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button { font-family: var(--font); }
+input, select, textarea { color-scheme: dark; }
+select option { background: var(--color-surface); color: var(--color-text-primary); }
+input[type='checkbox'], input[type='radio'] { accent-color: var(--color-primary); }
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator {
+	opacity: 0.72;
+	cursor: pointer;
+}
 
 /* ── Shell ─────────────────────────────────────────────────── */
 .shell { display: flex; height: 100%; overflow: hidden; position: relative; }

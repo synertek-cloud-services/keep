@@ -8,7 +8,7 @@ export type NavRole = 'admin' | 'tech';
 // Not all icon names are nav-specific (e.g. 'columns' is used by the ticket
 // list's column-chooser button) — this lives here simply because it's the
 // first catalog Icon.svelte needed a shared type from.
-export type IconName = 'grid' | 'ticket' | 'contract' | 'gear' | 'chevron' | 'columns';
+export type IconName = 'grid' | 'ticket' | 'contract' | 'gear' | 'chevron' | 'columns' | 'calendar';
 
 export interface NavLink {
 	label: string;
@@ -103,6 +103,7 @@ export const NAV_SECTIONS: NavSection[] = [
 		],
 		links: [
 			{ label: 'General Settings', href: '/settings/general' },
+			{ label: 'Ticket Workspace', href: '/settings/ticket-workspace' },
 			{ label: 'Companies', href: '/companies' }
 		]
 	}

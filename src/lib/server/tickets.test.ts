@@ -140,6 +140,11 @@ describe('ticket contract assignment', () => {
 			ticketId: ticket.id,
 			resourceId,
 			durationMinutes: 60,
+			startAt: Date.UTC(2026, 6, 27, 16) / 1000,
+			endAt: Date.UTC(2026, 6, 27, 17) / 1000,
+			notes: 'Resolved the issue',
+			internalNotes: 'Diagnostic detail',
+			billingOffsetMinutes: -15,
 			workDate: Date.UTC(2026, 6, 27) / 1000,
 			billable: true
 		});
@@ -156,6 +161,10 @@ describe('ticket contract assignment', () => {
 		expect(entry?.contractId).toBe(defaultContractId);
 		expect(entry?.contractBillingModel).toBe('included_hours');
 		expect(entry?.contractRateCents).toBe(15_000);
+		expect(entry?.startAt).toBe(Date.UTC(2026, 6, 27, 16) / 1000);
+		expect(entry?.endAt).toBe(Date.UTC(2026, 6, 27, 17) / 1000);
+		expect(entry?.internalNotes).toBe('Diagnostic detail');
+		expect(entry?.billingOffsetMinutes).toBe(-15);
 
 		await db
 			.update(schema.contracts)

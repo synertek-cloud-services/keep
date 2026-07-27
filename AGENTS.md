@@ -37,6 +37,8 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 - `responseDueAt` and `resolutionDueAt` are snapshots taken at triage exit or integration creation. SLA policy edits must never recalculate existing ticket deadlines.
 - `tickets.contractId` is selected at creation or explicit ticket edit and is never recomputed when a company's default changes. A new assignment must be Active, in term, and belong to the ticket's company; the existing assignment may remain after expiry.
 - Time entries snapshot the ticket's `contractId`, billing model, and hourly/overage rate at entry creation. Contract edits must not update historical time-entry billing fields.
+- New time entries persist organization-local start/end input as exact UTC `startAt`/`endAt` instants and derive `durationMinutes` server-side. Never trust a client-supplied duration. `notes` is the potentially customer-facing work summary; `internalNotes` must remain separate.
+- `billingOffsetMinutes` is signed and time-to-bill is `durationMinutes + billingOffsetMinutes`; validation must keep the result between zero and 24 hours. `tickets.estimatedMinutes` is optional and Time Summary derives remaining work rather than storing it.
 - Keep SLA-state math in the pure shared `src/lib/sla.ts` so server decisions and `SlaCountdown.svelte` cannot diverge.
 - Ticket-number claims must remain one atomic `INSERT ... ON CONFLICT ... RETURNING` statement in `src/lib/server/ticketNumber.ts`. Never replace it with read-then-write logic. The format is per-day `T-YYYYMMDD-XXXX`.
 - The ticket-number date key uses the validated IANA timezone from the singleton `organization_settings` row. Keep timestamps stored in UTC; use the setting only for business-calendar boundaries/presentation. Never rewrite existing numbers after a timezone change.
@@ -47,6 +49,8 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 - Prefer SvelteKit `load`/actions for browser workflows. A small JSON helper under a page route is acceptable only for page-local interactivity, such as dashboard drag/resize.
 - Keep static path segments distinct from parameterized route usage when adding nested routes.
 - Ticket sort, filter, and page state stays in URL query parameters. Only column visibility and page-size defaults are persisted per user in D1, never in `localStorage`.
+- Ticket workspace layouts use the versioned contract in `src/lib/ticketWorkspace.ts`. The organization layout is the default and a nullable user layout is an override; null must continue to mean “follow the current organization default.” Validate all saved JSON through `parseTicketWorkspaceLayout` and never permit core workflow widgets to be hidden.
+- Ticket detail routes belong under the standalone authenticated `(workspace)` group, not the main `(app)` shell. Ticket links should use `openTicketWorkspace()` so operational work opens separately while direct URLs remain session-gated.
 - Stable pagination requires SQL filtering, `LIMIT`/`OFFSET`, a matching `COUNT(*)`, and a deterministic final order term. Ticket sorting always uses `ticketNumber` as its tiebreaker; priority uses severity order rather than alphabetic order.
 - The ticket column catalog's `sortable` flags and `TicketSortKey` resolver are deliberately hand-synchronized. Do not derive one automatically from the other. SLA remains non-sortable because it is client-computed.
 
@@ -70,7 +74,7 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 
 ## Current direction
 
-- V1 plus operational Contracts and organization timezone settings is implemented, with 51 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
+- V1 plus operational Contracts, organization timezone settings, and the configurable three-column ticket workspace is implemented, with local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
 - Contract money is integer cents, included time is integer minutes, and contract dates are UTC date-only epoch seconds. Preserve those representations and the one-default-per-company unique-index invariant.
 - Likely next work is building Timesheets, then contract consumption/invoicing rules only when requirements justify them.
 - Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.

@@ -6,6 +6,9 @@ import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm
 export const organizationSettings = sqliteTable('organization_settings', {
 	id: text('id').primaryKey(), // deterministic singleton: organization-default
 	timezone: text('timezone').notNull().default('UTC'),
+	// Versioned JSON TicketWorkspaceLayout. Null falls back to the
+	// application default in $lib/ticketWorkspace.ts.
+	ticketWorkspaceLayout: text('ticket_workspace_layout'),
 	updatedAt: integer('updated_at').notNull()
 });
 
@@ -47,7 +50,10 @@ export const users = sqliteTable('users', {
 	// JSON object keyed by list name for preferences shared by newer list
 	// pages (currently Companies). Ticket preferences retain their original
 	// dedicated columns until there is a concrete reason to migrate them.
-	listPreferences: text('list_preferences')
+	listPreferences: text('list_preferences'),
+	// Versioned JSON TicketWorkspaceLayout. Null follows the current
+	// organization default rather than retaining a copied snapshot.
+	ticketWorkspaceLayout: text('ticket_workspace_layout')
 });
 
 export const userSessions = sqliteTable('user_sessions', {
@@ -304,6 +310,7 @@ export const tickets = sqliteTable(
 			.default('triage'),
 		priority: text('priority', { enum: ['critical', 'high', 'medium', 'low'] }), // null until triaged
 		prioritySource: text('priority_source', { enum: ['integration', 'manual'] }),
+		estimatedMinutes: integer('estimated_minutes'),
 		issueTypeId: text('issue_type_id').references(() => issueTypes.id),
 		subIssueTypeId: text('sub_issue_type_id').references(() => subIssueTypes.id),
 		queueId: text('queue_id')
@@ -397,8 +404,14 @@ export const timeEntries = sqliteTable('time_entries', {
 	}),
 	contractRateCents: integer('contract_rate_cents'),
 	durationMinutes: integer('duration_minutes').notNull(),
-	notes: text('notes'),
+	notes: text('notes'), // customer-facing work summary
+	internalNotes: text('internal_notes'),
 	workDate: integer('work_date').notNull(), // date the work was performed, not createdAt
+	// Exact UTC instants for entries captured with start/stop times. Nullable
+	// for entries created before start/stop tracking was introduced.
+	startAt: integer('start_at'),
+	endAt: integer('end_at'),
+	billingOffsetMinutes: integer('billing_offset_minutes').notNull().default(0),
 	// Defaults from company.defaultBillable at entry-creation time, overridable per entry.
 	billable: integer('billable', { mode: 'boolean' }).notNull().default(true),
 	createdAt: integer('created_at').notNull()

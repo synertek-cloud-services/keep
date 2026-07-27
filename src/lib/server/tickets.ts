@@ -238,7 +238,11 @@ export async function addTimeEntry(
 		resourceId: string;
 		durationMinutes: number;
 		notes?: string | null;
+		internalNotes?: string | null;
 		workDate: number;
+		startAt?: number | null;
+		endAt?: number | null;
+		billingOffsetMinutes?: number;
 		billable?: boolean | null;
 	}
 ): Promise<void> {
@@ -282,7 +286,11 @@ export async function addTimeEntry(
 		contractRateCents: contract?.hourlyRateCents ?? null,
 		durationMinutes: input.durationMinutes,
 		notes: input.notes ?? null,
+		internalNotes: input.internalNotes ?? null,
 		workDate: input.workDate,
+		startAt: input.startAt ?? null,
+		endAt: input.endAt ?? null,
+		billingOffsetMinutes: input.billingOffsetMinutes ?? 0,
 		billable,
 		createdAt: Math.floor(Date.now() / 1000)
 	});
@@ -300,6 +308,7 @@ export interface UpdateTicketHeaderInput {
 	contactId?: string | null;
 	issueTypeId?: string | null;
 	subIssueTypeId?: string | null;
+	estimatedMinutes?: number | null;
 	queueId?: string; // explicit override — wins over re-running routing
 }
 
@@ -328,6 +337,7 @@ export async function updateTicketHeader(db: Db, ticketId: string, input: Update
 	if (input.contactId !== undefined) updates.contactId = input.contactId;
 	if (input.issueTypeId !== undefined) updates.issueTypeId = input.issueTypeId;
 	if (input.subIssueTypeId !== undefined) updates.subIssueTypeId = input.subIssueTypeId;
+	if (input.estimatedMinutes !== undefined) updates.estimatedMinutes = input.estimatedMinutes;
 
 	if (input.queueId !== undefined) {
 		updates.queueId = input.queueId;

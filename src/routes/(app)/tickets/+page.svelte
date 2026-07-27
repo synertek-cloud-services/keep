@@ -8,6 +8,7 @@
 	import ColumnChooserModal from '$lib/components/ColumnChooserModal.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import TicketNumber from '$lib/components/TicketNumber.svelte';
+	import { openTicketWorkspace } from '$lib/ticketWorkspaceWindow';
 
 	let { data }: { data: PageData } = $props();
 
@@ -169,10 +170,10 @@
 		<tbody>
 			{#each data.tickets as t (t.id)}
 				{@const sla = rowSlaState(t)}
-				<tr onclick={() => goto(`/tickets/${t.id}`)} style="cursor: pointer;">
+				<tr onclick={() => openTicketWorkspace(t.id)} style="cursor: pointer;">
 					{#each columns as col (col.key)}
 						{#if col.key === 'ticketNumber'}
-							<td><TicketNumber value={t.ticketNumber} /></td>
+							<td><a href={`/tickets/${t.id}`} onclick={(event) => { event.preventDefault(); event.stopPropagation(); openTicketWorkspace(t.id); }}><TicketNumber value={t.ticketNumber} /></a></td>
 						{:else if col.key === 'title'}
 							<td>
 								{t.title}
