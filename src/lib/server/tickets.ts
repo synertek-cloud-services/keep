@@ -3,6 +3,7 @@ import type { Db } from './db';
 import * as schema from './db/schema';
 import { claimTicketNumber } from './ticketNumber';
 import { resolveQueueForIssueType } from './routing';
+import { resolveDefaultContract, validateEligibleContract } from './contracts';
 import {
 	computeTriageDueAt,
 	computeResponseResolutionDueAt,
@@ -20,6 +21,7 @@ export interface CreateTicketInput {
 	title: string;
 	description?: string | null;
 	companyId: string;
+	contractId?: string | null; // omitted = resolve the company's eligible default
 	contactId?: string | null;
 	issueTypeId?: string | null;
 	subIssueTypeId?: string | null;
@@ -36,6 +38,16 @@ export async function createTicket(db: Db, input: CreateTicketInput) {
 
 	const company = await db.select().from(schema.companies).where(eq(schema.companies.id, input.companyId)).get();
 	if (!company) throw new Error('company not found');
+	let contractId: string | null;
+	if (input.contractId === undefined) {
+		contractId = await resolveDefaultContract(db, input.companyId, now);
+	} else if (input.contractId === null) {
+		contractId = null;
+	} else {
+		const contract = await validateEligibleContract(db, input.contractId, input.companyId, now);
+		if (!contract) throw new Error('contract is not eligible for the selected company');
+		contractId = contract.id;
+	}
 
 	const ticketNumber = await claimTicketNumber(db, now);
 	const queueId = input.queueId ?? (await resolveQueueForIssueType(db, input.issueTypeId, input.subIssueTypeId));
@@ -68,6 +80,7 @@ export async function createTicket(db: Db, input: CreateTicketInput) {
 			subIssueTypeId: input.subIssueTypeId ?? null,
 			queueId,
 			companyId: input.companyId,
+			contractId,
 			contactId: input.contactId ?? null,
 			source: 'integration',
 			createdBy: input.createdBy ?? null,
@@ -95,6 +108,7 @@ export async function createTicket(db: Db, input: CreateTicketInput) {
 			subIssueTypeId: input.subIssueTypeId ?? null,
 			queueId,
 			companyId: input.companyId,
+			contractId,
 			contactId: input.contactId ?? null,
 			source: input.source,
 			createdBy: input.createdBy ?? null,
@@ -228,12 +242,14 @@ export async function addTimeEntry(
 	}
 ): Promise<void> {
 	let billable = input.billable;
+	const ticket = await db
+		.select({ companyId: schema.tickets.companyId, contractId: schema.tickets.contractId })
+		.from(schema.tickets)
+		.where(eq(schema.tickets.id, input.ticketId))
+		.get();
+	if (!ticket) throw new Error('ticket not found');
+
 	if (billable == null) {
-		const ticket = await db
-			.select({ companyId: schema.tickets.companyId })
-			.from(schema.tickets)
-			.where(eq(schema.tickets.id, input.ticketId))
-			.get();
 		const company = ticket
 			? await db
 					.select({ defaultBillable: schema.companies.defaultBillable })
@@ -244,10 +260,25 @@ export async function addTimeEntry(
 		billable = company?.defaultBillable ?? true;
 	}
 
+	const contract = ticket.contractId
+		? await db
+				.select({
+					id: schema.contracts.id,
+					billingModel: schema.contracts.billingModel,
+					hourlyRateCents: schema.contracts.hourlyRateCents
+				})
+				.from(schema.contracts)
+				.where(eq(schema.contracts.id, ticket.contractId))
+				.get()
+		: null;
+
 	await db.insert(schema.timeEntries).values({
 		id: crypto.randomUUID(),
 		ticketId: input.ticketId,
 		resourceId: input.resourceId,
+		contractId: contract?.id ?? null,
+		contractBillingModel: contract?.billingModel ?? null,
+		contractRateCents: contract?.hourlyRateCents ?? null,
 		durationMinutes: input.durationMinutes,
 		notes: input.notes ?? null,
 		workDate: input.workDate,
@@ -264,6 +295,7 @@ export interface UpdateTicketHeaderInput {
 	title?: string;
 	description?: string | null;
 	companyId?: string;
+	contractId?: string | null;
 	contactId?: string | null;
 	issueTypeId?: string | null;
 	subIssueTypeId?: string | null;
@@ -277,7 +309,21 @@ export async function updateTicketHeader(db: Db, ticketId: string, input: Update
 	const updates: Partial<typeof schema.tickets.$inferInsert> = { updatedAt: Math.floor(Date.now() / 1000) };
 	if (input.title !== undefined) updates.title = input.title;
 	if (input.description !== undefined) updates.description = input.description;
-	if (input.companyId !== undefined) updates.companyId = input.companyId;
+	const nextCompanyId = input.companyId ?? ticket.companyId;
+	if (input.companyId !== undefined) updates.companyId = nextCompanyId;
+	if (input.contractId !== undefined) {
+		if (input.contractId === null) {
+			updates.contractId = null;
+		} else if (input.contractId === ticket.contractId && nextCompanyId === ticket.companyId) {
+			updates.contractId = input.contractId;
+		} else {
+			const contract = await validateEligibleContract(db, input.contractId, nextCompanyId);
+			if (!contract) throw new Error('contract is not eligible for the selected company');
+			updates.contractId = contract.id;
+		}
+	} else if (input.companyId !== undefined && input.companyId !== ticket.companyId) {
+		updates.contractId = await resolveDefaultContract(db, nextCompanyId);
+	}
 	if (input.contactId !== undefined) updates.contactId = input.contactId;
 	if (input.issueTypeId !== undefined) updates.issueTypeId = input.issueTypeId;
 	if (input.subIssueTypeId !== undefined) updates.subIssueTypeId = input.subIssueTypeId;

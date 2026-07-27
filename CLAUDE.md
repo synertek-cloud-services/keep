@@ -91,7 +91,7 @@ Cloudflare D1 (SQLite) via Drizzle ORM, `src/lib/server/db/schema.ts` — single
 
 **Generated via `drizzle-kit generate`, not hand-written.** This is the opposite of Beacon's current practice — Beacon's migration journal went stale at some point in its history (an artifact of manual edits/out-of-band DDL), so its `AGENTS.md` now forbids running `generate`. Keep starts clean and has no such baggage. Workflow: edit `schema.ts` → `make db-generate` → hand-append any baseline seed `INSERT`s to the newly generated file (generate only emits DDL, never data) → `make migrate-local` → `make type-check`. **Never** `drizzle-kit push`, **never** hand-edit an already-applied migration — that discipline is what keeps the journal from going stale the way Beacon's did.
 
-Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0006`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, adding per-user preference storage on `users`, and adding Contracts.
+Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0007`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, adding per-user preference storage on `users`, adding Contracts, and linking contracts to tickets/time entries.
 
 ## Auth system
 
@@ -125,6 +125,7 @@ See `src/lib/server/tickets.ts` and `src/lib/sla.ts` for the authoritative logic
 - Integration-sourced tickets (via `/api/tickets/ingest`) arrive with a trusted priority and skip `triage` entirely; SLA clocks start immediately.
 - `responseDueAt`/`resolutionDueAt` are **snapshotted** from the company's SLA policy at the moment priority is set (or at creation, for Integration tickets) — never recomputed live. Editing an SLA policy later does not retroactively change already-triaged tickets' due dates.
 - `slaState()` in `src/lib/sla.ts` is pure (no DB) specifically so it can be imported both server-side and by the client-side `SlaCountdown.svelte` component for a live-ticking badge that matches the server's judgment exactly.
+- `contractId` is also a snapshotted ticket association. Manual and Integration tickets created through `createTicket()` select the company's default only when it is Active and in term on that UTC date. Changing the company default later never rewrites existing tickets. Explicit changes must select an eligible contract belonging to the ticket's company; an already-selected contract remains visible/preservable if it later expires.
 
 ## Shared dashboard
 
@@ -155,7 +156,9 @@ Admin → Companies is the second paginated list and deliberately uses a lighter
 
 ## Contracts
 
-Contracts is an admin-managed top-level module under `(app)/(admin)/contracts`. A contract belongs to one company and records lifecycle status, type, billing model, date-only UTC start/end values, fixed fee, included minutes, hourly/overage rate, and whether it is the company's default. Currency is always stored as integer cents and included time as integer minutes; the partial unique index `contracts_one_default_per_company` enforces at most one default contract per company. The directory uses the same curated search/filter/sort/pagination pattern as Companies, with its page-size preference under the `contracts` key in `users.listPreferences`. This is contract-term tracking only: invoice generation, consumption calculations, and ticket/time-entry selection are deferred.
+Contracts is an admin-managed top-level module under `(app)/(admin)/contracts`. A contract belongs to one company and records lifecycle status, type, billing model, date-only UTC start/end values, fixed fee, included minutes, hourly/overage rate, and whether it is the company's default. Currency is always stored as integer cents and included time as integer minutes; the partial unique index `contracts_one_default_per_company` enforces at most one default contract per company. The directory uses the same curated search/filter/sort/pagination pattern as Companies, with its page-size preference under the `contracts` key in `users.listPreferences`.
+
+Tickets consume contracts through a nullable `tickets.contractId`. Both manual and Integration creation resolve the eligible company default in the shared ticket core. New time entries copy that ticket association plus `contractBillingModel` and `contractRateCents`; those fields are historical snapshots, so editing contract terms later does not rewrite billing context already recorded. Invoice generation and included-hours consumption math remain deferred.
 
 ## Ticket ingestion API
 

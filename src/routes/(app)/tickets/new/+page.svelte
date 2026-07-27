@@ -9,6 +9,7 @@
 
 	let availableContacts = $derived(data.contacts.filter((c) => c.companyId === selectedCompanyId));
 	let availableSubTypes = $derived(data.subIssueTypes.filter((s) => s.issueTypeId === selectedIssueTypeId));
+	let defaultContract = $derived(data.defaultContracts.find((contract) => contract.companyId === selectedCompanyId));
 </script>
 
 <svelte:head>
@@ -51,6 +52,12 @@
 						<option value={c.id}>{c.name}</option>
 					{/each}
 				</select>
+			</div>
+			<div class="field">
+				<div style="font-size: 12px; font-weight: 600; margin-bottom: 5px;">Contract</div>
+				<div style="color: var(--color-text-muted); font-size: 12px; padding: 8px 0;">
+					{defaultContract ? `${defaultContract.name} (company default)` : 'No eligible default contract'}
+				</div>
 			</div>
 			<div class="field">
 				<label for="issueTypeId">Issue Type (optional)</label>

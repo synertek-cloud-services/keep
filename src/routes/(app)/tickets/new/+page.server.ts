@@ -1,8 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { and, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { createTicket } from '$lib/server/tickets';
+import { utcDayStart } from '$lib/server/contracts';
 
 export const load: PageServerLoad = async ({ platform }) => {
 	const db = getDb(platform!);
@@ -10,7 +12,20 @@ export const load: PageServerLoad = async ({ platform }) => {
 	const contacts = await db.select().from(schema.contacts).all();
 	const issueTypes = await db.select().from(schema.issueTypes).orderBy(schema.issueTypes.sortOrder).all();
 	const subIssueTypes = await db.select().from(schema.subIssueTypes).orderBy(schema.subIssueTypes.sortOrder).all();
-	return { companies, contacts, issueTypes, subIssueTypes };
+	const today = utcDayStart(Math.floor(Date.now() / 1000));
+	const defaultContracts = await db
+		.select({ id: schema.contracts.id, companyId: schema.contracts.companyId, name: schema.contracts.name })
+		.from(schema.contracts)
+		.where(
+			and(
+				eq(schema.contracts.isDefault, true),
+				eq(schema.contracts.status, 'active'),
+				lte(schema.contracts.startDate, today),
+				or(isNull(schema.contracts.endDate), gte(schema.contracts.endDate, today))
+			)
+		)
+		.all();
+	return { companies, contacts, issueTypes, subIssueTypes, defaultContracts };
 };
 
 export const actions: Actions = {

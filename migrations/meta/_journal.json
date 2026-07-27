@@ -50,6 +50,13 @@
       "when": 1785173778504,
       "tag": "0006_wealthy_silver_sable",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1785174529675,
+      "tag": "0007_fixed_cargill",
+      "breakpoints": true
     }
   ]
 }

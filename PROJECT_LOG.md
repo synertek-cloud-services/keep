@@ -4,6 +4,12 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd 2) — Ticket and time-entry contract integration
+
+Made Contracts operational in the service workflow. Shared `createTicket()` now assigns the company's default contract only when it is Active and in term on the ticket's UTC creation date, so manual and Integration ingestion behave identically. Tickets can explicitly select another eligible same-company contract; cross-company/inactive/out-of-term selection is rejected. The association is snapshotted—later default changes do not reassign existing tickets—and a current contract remains preservable after it expires.
+
+New time entries copy the ticket's contract plus billing model and hourly/overage rate into nullable historical fields. Ticket details now show eligible contract selection and display Contract + Billing Context per time row. Migration `0007_fixed_cargill.sql` adds the nullable references/snapshot columns without rewriting old data. Tests cover default resolution, cross-company rejection, ticket association stability, UTC eligibility dates, and time-entry billing snapshots.
+
 ## 2026-07-27 (cont'd) — Contracts v1
 
 Added the first post-v1 business module: admin-managed Contracts. Contracts belong to companies and track Draft/Active/Expired/Terminated lifecycle, Recurring/Block Hours/Time & Materials type, fixed-fee/included-hours/hourly billing model, UTC date-only terms, integer-cent fees/rates, integer-minute included time, and an optional company-default flag enforced by a partial unique index. The directory follows the curated Companies UX—search by contract/company, status/type filters, sortable headers, SQL pagination, and remembered page size—rather than adding ticket-style column configuration.

@@ -2,13 +2,34 @@
 	import { enhance } from '$app/forms';
 	import type { ActionData, PageData } from './$types';
 	import SlaCountdown from '$lib/components/SlaCountdown.svelte';
+	import { BILLING_MODEL_LABELS, formatCentsForInput } from '$lib/contracts';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let selectedCompanyId = $state(data.ticket.companyId);
 	let selectedIssueTypeId = $state(data.ticket.issueTypeId ?? '');
+	let selectedContractId = $state('');
 	let availableContacts = $derived(data.contacts.filter((c) => c.companyId === selectedCompanyId));
 	let availableSubTypes = $derived(data.subIssueTypes.filter((s) => s.issueTypeId === selectedIssueTypeId));
+	let availableContracts = $derived(data.contracts.filter((contract) => contract.companyId === selectedCompanyId));
+
+	$effect(() => {
+		selectedContractId = data.ticket.contractId ?? '';
+	});
+
+	function changeCompany(companyId: string) {
+		selectedCompanyId = companyId;
+		const companyContracts = data.contracts.filter((contract) => contract.companyId === companyId);
+		selectedContractId = companyContracts.find((contract) => contract.isDefault)?.id ?? '';
+	}
+
+	function billingContext(entry: PageData['timeEntries'][number]): string {
+		if (!entry.contractBillingModel) return '—';
+		const label = BILLING_MODEL_LABELS[entry.contractBillingModel];
+		if (entry.contractBillingModel === 'fixed_fee' || entry.contractRateCents == null) return label;
+		const rate = `$${formatCentsForInput(entry.contractRateCents)}/hr`;
+		return entry.contractBillingModel === 'included_hours' ? `${label} · ${rate} overage` : `${label} · ${rate}`;
+	}
 
 	const statusLabels: Record<string, string> = {
 		triage: 'Triage',
@@ -103,7 +124,7 @@
 		<div style="display:flex; gap:14px;">
 			<div class="field" style="flex:1;">
 				<label for="companyId">Company</label>
-				<select id="companyId" name="companyId" bind:value={selectedCompanyId}>
+				<select id="companyId" name="companyId" value={selectedCompanyId} onchange={(e) => changeCompany((e.currentTarget as HTMLSelectElement).value)}>
 					{#each data.companies as c (c.id)}
 						<option value={c.id}>{c.name}</option>
 					{/each}
@@ -117,6 +138,20 @@
 						<option value={c.id} selected={c.id === data.ticket.contactId}>{c.name}</option>
 					{/each}
 				</select>
+			</div>
+		</div>
+		<div class="field">
+			<label for="contractId">Contract</label>
+			<select id="contractId" name="contractId" bind:value={selectedContractId}>
+				<option value="">No contract</option>
+				{#each availableContracts as contract (contract.id)}
+					<option value={contract.id}>
+						{contract.name}{contract.isDefault ? ' (Default)' : ''}{contract.status !== 'active' ? ` (${contract.status})` : ''}
+					</option>
+				{/each}
+			</select>
+			<div style="font-size:11px; color:var(--color-text-muted); margin-top:4px;">
+				Only active, in-term contracts for the selected company are available. The current contract remains visible if it later expires.
 			</div>
 		</div>
 		<div style="display:flex; gap:14px;">
@@ -215,6 +250,8 @@
 					<th>Tech</th>
 					<th>Duration</th>
 					<th>Notes</th>
+					<th>Contract</th>
+					<th>Billing Context</th>
 					<th>Billable</th>
 					<th></th>
 				</tr>
@@ -226,6 +263,8 @@
 						<td>{e.resourceName ?? e.resourceEmail}</td>
 						<td>{e.durationMinutes} min</td>
 						<td>{e.notes ?? '—'}</td>
+						<td>{e.contractName ?? 'No contract'}</td>
+						<td>{billingContext(e)}</td>
 						<td><span class="badge" class:badge-success={e.billable} class:badge-muted={!e.billable}>{e.billable ? 'Billable' : 'Non-billable'}</span></td>
 						<td>
 							<form method="POST" action="?/deleteTimeEntry" use:enhance>
@@ -235,7 +274,7 @@
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="6" class="empty">No time entries yet.</td></tr>
+					<tr><td colspan="8" class="empty">No time entries yet.</td></tr>
 				{/each}
 			</tbody>
 		</table>

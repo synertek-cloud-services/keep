@@ -35,6 +35,8 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 - A ticket cannot leave `triage` without a priority. `triage` intentionally has no ordinary transition; use `triageTicket`.
 - Integration tickets may start outside triage only because their priority is trusted and their SLA clocks begin at creation.
 - `responseDueAt` and `resolutionDueAt` are snapshots taken at triage exit or integration creation. SLA policy edits must never recalculate existing ticket deadlines.
+- `tickets.contractId` is selected at creation or explicit ticket edit and is never recomputed when a company's default changes. A new assignment must be Active, in term, and belong to the ticket's company; the existing assignment may remain after expiry.
+- Time entries snapshot the ticket's `contractId`, billing model, and hourly/overage rate at entry creation. Contract edits must not update historical time-entry billing fields.
 - Keep SLA-state math in the pure shared `src/lib/sla.ts` so server decisions and `SlaCountdown.svelte` cannot diverge.
 - Ticket-number claims must remain one atomic `INSERT ... ON CONFLICT ... RETURNING` statement in `src/lib/server/ticketNumber.ts`. Never replace it with read-then-write logic. The format is per-day `T-YYYYMMDD-XXXX`.
 
@@ -67,7 +69,7 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 
 ## Current direction
 
-- V1 plus Contracts term tracking is implemented, with 43 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
+- V1 plus operational Contracts is implemented, with 48 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
 - Contract money is integer cents, included time is integer minutes, and contract dates are UTC date-only epoch seconds. Preserve those representations and the one-default-per-company unique-index invariant.
-- Likely next work is connecting contracts to ticket/time-entry workflows, building Timesheets, or improving the Users list.
+- Likely next work is building Timesheets, then contract consumption/invoicing rules only when requirements justify them.
 - Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.

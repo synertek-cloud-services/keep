@@ -306,6 +306,10 @@ export const tickets = sqliteTable(
 		companyId: text('company_id')
 			.notNull()
 			.references(() => companies.id),
+		// Snapshotted association selected at ticket creation (company default)
+		// or explicitly changed later. Changing a company's default contract
+		// never rewrites existing tickets.
+		contractId: text('contract_id').references(() => contracts.id),
 		contactId: text('contact_id').references(() => contacts.id),
 		source: text('source', { enum: ['manual', 'email', 'portal', 'integration'] })
 			.notNull()
@@ -376,6 +380,14 @@ export const timeEntries = sqliteTable('time_entries', {
 	resourceId: text('resource_id')
 		.notNull()
 		.references(() => users.id),
+	// Contract association and billing context are snapshotted from the
+	// ticket/contract when the entry is created. Contract term edits do not
+	// retroactively change historical time-entry billing context.
+	contractId: text('contract_id').references(() => contracts.id),
+	contractBillingModel: text('contract_billing_model', {
+		enum: ['fixed_fee', 'included_hours', 'hourly']
+	}),
+	contractRateCents: integer('contract_rate_cents'),
 	durationMinutes: integer('duration_minutes').notNull(),
 	notes: text('notes'),
 	workDate: integer('work_date').notNull(), // date the work was performed, not createdAt

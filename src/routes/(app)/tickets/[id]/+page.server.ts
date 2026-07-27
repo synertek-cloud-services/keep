@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
@@ -14,6 +14,7 @@ import {
 	updateTicketHeader
 } from '$lib/server/tickets';
 import { nextValidStatuses, canLeaveTriage, type Priority, type TicketStatus } from '$lib/sla';
+import { utcDayStart } from '$lib/server/contracts';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
 	const db = getDb(platform!);
@@ -52,21 +53,48 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 			notes: schema.timeEntries.notes,
 			workDate: schema.timeEntries.workDate,
 			billable: schema.timeEntries.billable,
+			contractName: schema.contracts.name,
+			contractBillingModel: schema.timeEntries.contractBillingModel,
+			contractRateCents: schema.timeEntries.contractRateCents,
 			resourceName: schema.users.displayName,
 			resourceEmail: schema.users.email
 		})
 		.from(schema.timeEntries)
 		.innerJoin(schema.users, eq(schema.users.id, schema.timeEntries.resourceId))
+		.leftJoin(schema.contracts, eq(schema.contracts.id, schema.timeEntries.contractId))
 		.where(eq(schema.timeEntries.ticketId, params.id))
 		.orderBy(desc(schema.timeEntries.workDate))
 		.all();
 
 	const companies = await db.select().from(schema.companies).orderBy(schema.companies.name).all();
-	const contacts = await db.select().from(schema.contacts).where(eq(schema.contacts.companyId, ticket.companyId)).all();
+	const contacts = await db.select().from(schema.contacts).all();
 	const issueTypes = await db.select().from(schema.issueTypes).orderBy(schema.issueTypes.sortOrder).all();
 	const subIssueTypes = await db.select().from(schema.subIssueTypes).orderBy(schema.subIssueTypes.sortOrder).all();
 	const queues = await db.select().from(schema.queues).orderBy(schema.queues.name).all();
 	const users = await db.select().from(schema.users).where(eq(schema.users.isActive, true)).all();
+	const today = utcDayStart(Math.floor(Date.now() / 1000));
+	const eligibleContractCondition = and(
+		eq(schema.contracts.status, 'active'),
+		lte(schema.contracts.startDate, today),
+		or(isNull(schema.contracts.endDate), gte(schema.contracts.endDate, today))
+	);
+	const contracts = await db
+		.select({
+			id: schema.contracts.id,
+			companyId: schema.contracts.companyId,
+			name: schema.contracts.name,
+			status: schema.contracts.status,
+			billingModel: schema.contracts.billingModel,
+			isDefault: schema.contracts.isDefault
+		})
+		.from(schema.contracts)
+		.where(
+			ticket.contractId
+				? or(eligibleContractCondition, eq(schema.contracts.id, ticket.contractId))
+				: eligibleContractCondition
+		)
+		.orderBy(schema.contracts.name)
+		.all();
 
 	return {
 		ticket,
@@ -84,6 +112,7 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 		subIssueTypes,
 		queues,
 		users,
+		contracts,
 		nextStatuses: nextValidStatuses(ticket.status as TicketStatus)
 	};
 };
@@ -95,14 +124,19 @@ export const actions: Actions = {
 		if (!title) return fail(400, { error: 'Title is required.' });
 
 		const db = getDb(platform!);
-		await updateTicketHeader(db, params.id, {
-			title,
-			description: String(form.get('description') ?? '').trim() || null,
-			companyId: String(form.get('companyId') ?? ''),
-			contactId: String(form.get('contactId') ?? '') || null,
-			issueTypeId: String(form.get('issueTypeId') ?? '') || null,
-			subIssueTypeId: String(form.get('subIssueTypeId') ?? '') || null
-		});
+		try {
+			await updateTicketHeader(db, params.id, {
+				title,
+				description: String(form.get('description') ?? '').trim() || null,
+				companyId: String(form.get('companyId') ?? ''),
+				contractId: String(form.get('contractId') ?? '') || null,
+				contactId: String(form.get('contactId') ?? '') || null,
+				issueTypeId: String(form.get('issueTypeId') ?? '') || null,
+				subIssueTypeId: String(form.get('subIssueTypeId') ?? '') || null
+			});
+		} catch (e) {
+			return fail(400, { error: e instanceof Error ? e.message : 'Failed to update ticket.' });
+		}
 		return { success: true };
 	},
 
