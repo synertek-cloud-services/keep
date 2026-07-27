@@ -101,7 +101,10 @@ export const NAV_SECTIONS: NavSection[] = [
 				]
 			}
 		],
-		links: [{ label: 'Companies', href: '/companies' }]
+		links: [
+			{ label: 'General Settings', href: '/settings/general' },
+			{ label: 'Companies', href: '/companies' }
+		]
 	}
 ];
 

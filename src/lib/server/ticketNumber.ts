@@ -9,9 +9,25 @@ import { ticketCounters } from './db/schema';
 // guarantee needed; no app-level lock or Durable Object required. Do not
 // "simplify" this into a separate SELECT followed by an UPDATE — that
 // reintroduces a race under concurrent ticket creation.
-export async function claimTicketNumber(db: Db, nowSeconds: number): Promise<string> {
-	const d = new Date(nowSeconds * 1000);
-	const dateKey = d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+export function ticketDateKey(nowSeconds: number, timezone: string): number {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: timezone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		calendar: 'gregory',
+		numberingSystem: 'latn'
+	}).formatToParts(new Date(nowSeconds * 1000));
+	const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+	const year = value('year');
+	const month = value('month');
+	const day = value('day');
+	if (!year || !month || !day) throw new Error('failed to resolve ticket date in organization timezone');
+	return Number(`${year}${month}${day}`);
+}
+
+export async function claimTicketNumber(db: Db, nowSeconds: number, timezone = 'UTC'): Promise<string> {
+	const dateKey = ticketDateKey(nowSeconds, timezone);
 
 	const rows = await db
 		.insert(ticketCounters)

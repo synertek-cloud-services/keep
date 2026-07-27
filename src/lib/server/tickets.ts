@@ -4,6 +4,7 @@ import * as schema from './db/schema';
 import { claimTicketNumber } from './ticketNumber';
 import { resolveQueueForIssueType } from './routing';
 import { resolveDefaultContract, validateEligibleContract } from './contracts';
+import { getOrganizationTimezone } from './settings';
 import {
 	computeTriageDueAt,
 	computeResponseResolutionDueAt,
@@ -49,7 +50,7 @@ export async function createTicket(db: Db, input: CreateTicketInput) {
 		contractId = contract.id;
 	}
 
-	const ticketNumber = await claimTicketNumber(db, now);
+	const ticketNumber = await claimTicketNumber(db, now, await getOrganizationTimezone(db));
 	const queueId = input.queueId ?? (await resolveQueueForIssueType(db, input.issueTypeId, input.subIssueTypeId));
 	const id = crypto.randomUUID();
 

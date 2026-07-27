@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test';
 import { drizzle } from 'drizzle-orm/d1';
 import { applyMigrationsForTest } from './db/testMigrate';
 import * as schema from './db/schema';
-import { claimTicketNumber } from './ticketNumber';
+import { claimTicketNumber, ticketDateKey } from './ticketNumber';
 
 const db = drizzle(env.DB, { schema });
 
@@ -12,9 +12,25 @@ beforeAll(async () => {
 });
 
 describe('claimTicketNumber', () => {
+	it('derives the calendar day in the organization timezone', () => {
+		const justAfterUtcMidnight = Date.UTC(2029, 6, 28, 0, 30) / 1000;
+		expect(ticketDateKey(justAfterUtcMidnight, 'UTC')).toBe(20290728);
+		expect(ticketDateKey(justAfterUtcMidnight, 'America/Los_Angeles')).toBe(20290727);
+		expect(ticketDateKey(justAfterUtcMidnight, 'Asia/Tokyo')).toBe(20290728);
+	});
+
 	it('starts a fresh day at 1 and formats T-<YYYYMMDD>-<padded 4 digits>', async () => {
 		const number = await claimTicketNumber(db, Date.UTC(2030, 0, 1) / 1000);
 		expect(number).toBe('T-20300101-0001');
+	});
+
+	it('uses the timezone-derived day in the stored ticket number', async () => {
+		const number = await claimTicketNumber(
+			db,
+			Date.UTC(2034, 8, 10, 1, 0) / 1000,
+			'America/Los_Angeles'
+		);
+		expect(number).toBe('T-20340909-0001');
 	});
 
 	it('increments sequentially within the same day', async () => {

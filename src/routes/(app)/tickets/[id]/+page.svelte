@@ -3,6 +3,7 @@
 	import type { ActionData, PageData } from './$types';
 	import SlaCountdown from '$lib/components/SlaCountdown.svelte';
 	import { BILLING_MODEL_LABELS, formatCentsForInput } from '$lib/contracts';
+	import TicketNumber from '$lib/components/TicketNumber.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -56,10 +57,10 @@
 	<title>{data.ticket.ticketNumber} — Keep</title>
 </svelte:head>
 
-<div class="pf-page" style="max-width: 960px;">
-	<div class="pf-crumb"><a href="/tickets">Tickets</a> / {data.ticket.ticketNumber}</div>
+	<div class="pf-page" style="max-width: 960px;">
+	<div class="pf-crumb"><a href="/tickets">Tickets</a> / <TicketNumber value={data.ticket.ticketNumber} /></div>
 	<div class="pf-topbar">
-		<h1>{data.ticket.ticketNumber} <span class="badge badge-muted" style="margin-left:10px;">{statusLabels[data.ticket.status]}</span>{#if data.ticket.needsTechAttention}<span class="badge badge-warning" style="margin-left:6px;">Needs Attention</span>{/if}</h1>
+		<h1>{data.ticket.title} <span class="badge badge-muted" style="margin-left:10px;">{statusLabels[data.ticket.status]}</span>{#if data.ticket.needsTechAttention}<span class="badge badge-warning" style="margin-left:6px;">Needs Attention</span>{/if}</h1>
 	</div>
 
 	{#if form?.error}

@@ -4,6 +4,12 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd 3) — Organization timezone and ticket-number treatment
+
+Added Admin → General Settings backed by a singleton `organization_settings` row and validated IANA timezone input. Migration `0008_bitter_captain_flint.sql` creates the table and ships the required `organization-default` baseline row set to `America/Los_Angeles`. All timestamps remain UTC. Ticket numbering is the first calendar-boundary consumer: the existing atomic daily UPSERT is unchanged, but its `YYYYMMDD` key is now derived in the organization timezone, preventing late-Pacific-day tickets from receiving tomorrow's UTC date.
+
+Kept the stored/API format `T-YYYYMMDD-XXXX`, but added `TicketNumber.svelte` to mute the prefix/date and emphasize the daily sequence consistently in ticket tables, dashboard lists, breadcrumbs, and headings. Tests cover valid IANA zones and timezone date-boundary behavior. The demo reset allowlist now includes the settings table.
+
 ## 2026-07-27 (cont'd 2) — Ticket and time-entry contract integration
 
 Made Contracts operational in the service workflow. Shared `createTicket()` now assigns the company's default contract only when it is Active and in term on the ticket's UTC creation date, so manual and Integration ingestion behave identically. Tickets can explicitly select another eligible same-company contract; cross-company/inactive/out-of-term selection is rejected. The association is snapshotted—later default changes do not reassign existing tickets—and a current contract remains preservable after it expires.

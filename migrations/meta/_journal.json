@@ -57,6 +57,13 @@
       "when": 1785174529675,
       "tag": "0007_fixed_cargill",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785176299716,
+      "tag": "0008_bitter_captain_flint",
+      "breakpoints": true
     }
   ]
 }

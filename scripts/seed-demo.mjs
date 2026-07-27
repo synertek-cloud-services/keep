@@ -27,7 +27,7 @@ const root = dirname(fileURLToPath(import.meta.url)) + '/..';
 const resetTables = [
 	'notes', 'time_entries', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
 	'sub_issue_types', 'sla_policy_priorities', 'user_sessions', 'sso_group_role_mappings',
-	'sso_login_state', 'users', 'dashboard_widgets', 'issue_types', 'queues', 'sla_policies',
+	'sso_login_state', 'users', 'dashboard_widgets', 'issue_types', 'queues', 'sla_policies', 'organization_settings',
 	'sso_providers', 'dashboards', 'ticket_counters', 'd1_migrations'
 ];
 const resetTableSet = new Set(resetTables);
@@ -215,7 +215,22 @@ function slaExpr(priority, demoState) {
 const QUEUE_GROUP = { computer: 'service-desk', server: 'service-desk', network: 'network', secops: 'security' };
 const QUEUE_NAME = { 'service-desk': 'Service Desk', network: 'Network Ops', security: 'Security' };
 
-export function buildWorldSql(world, ticketStartNumber = 1) {
+function ticketDateKey(timezone, now = new Date()) {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: timezone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).formatToParts(now);
+	const part = (type) => parts.find((item) => item.type === type)?.value;
+	return `${part('year')}${part('month')}${part('day')}`;
+}
+
+export function buildWorldSql(
+	world,
+	ticketStartNumber = 1,
+	dateKey = ticketDateKey('UTC')
+) {
 	validateWorld(world);
 	const now = 'unixepoch()';
 	const sql = [];
@@ -256,7 +271,7 @@ export function buildWorldSql(world, ticketStartNumber = 1) {
 
 	for (let i = 0; i < BLUEPRINT.rowCount; i++) {
 		const ticketId = id(world, 'ticket', i);
-		const ticketNumber = `('T-' || strftime('%Y%m%d', 'now') || '-' || substr('0000' || ${ticketStartNumber + i}, -4, 4))`;
+		const ticketNumber = quote(`T-${dateKey}-${String(ticketStartNumber + i).padStart(4, '0')}`);
 		const company = world.companies[BLUEPRINT.company[i]];
 		const cid = companyId.get(company.key);
 		const contactId = id(world, 'contact', company.key);
@@ -322,7 +337,7 @@ export function buildWorldSql(world, ticketStartNumber = 1) {
 
 	const nextNumber = ticketStartNumber + BLUEPRINT.rowCount;
 	sql.push(
-		`INSERT INTO ticket_counters (date_key, next_number) VALUES (CAST(strftime('%Y%m%d', 'now') AS INTEGER), ${nextNumber}) ON CONFLICT(date_key) DO UPDATE SET next_number = ${nextNumber};`
+		`INSERT INTO ticket_counters (date_key, next_number) VALUES (${Number(dateKey)}, ${nextNumber}) ON CONFLICT(date_key) DO UPDATE SET next_number = ${nextNumber};`
 	);
 
 	return sql.join('\n');
@@ -340,12 +355,20 @@ function preflightEmpty(options) {
 	}
 }
 
-function currentTicketCounter(options) {
+function currentTicketCounter(options, dateKey) {
 	const found = rows(
 		options,
-		"SELECT next_number FROM ticket_counters WHERE date_key = CAST(strftime('%Y%m%d', 'now') AS INTEGER)"
+		`SELECT next_number FROM ticket_counters WHERE date_key = ${Number(dateKey)}`
 	);
 	return found[0]?.next_number ?? 1;
+}
+
+function organizationTimezone(options) {
+	const found = rows(
+		options,
+		"SELECT timezone FROM organization_settings WHERE id = 'organization-default'"
+	);
+	return found[0]?.timezone ?? 'America/Los_Angeles';
 }
 
 function resetLocal(options) {
@@ -372,8 +395,9 @@ function resetLocal(options) {
 export function run(options) {
 	if (options.reset) resetLocal(options);
 	preflightEmpty(options);
-	const ticketStartNumber = currentTicketCounter(options);
-	executeSql(options, buildWorldSql(options.world, ticketStartNumber));
+	const dateKey = ticketDateKey(organizationTimezone(options));
+	const ticketStartNumber = currentTicketCounter(options, dateKey);
+	executeSql(options, buildWorldSql(options.world, ticketStartNumber, dateKey));
 	const [counts] = rows(
 		options,
 		'SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM contracts) AS contracts, (SELECT count(*) FROM tickets) AS tickets, (SELECT count(*) FROM users WHERE auth_source = \'local\' AND password_hash IS NULL) AS techs'

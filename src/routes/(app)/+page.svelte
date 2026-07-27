@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 	import DonutChart from '$lib/components/DonutChart.svelte';
+	import TicketNumber from '$lib/components/TicketNumber.svelte';
 
 	// Fixed palette so chart segment colors stay consistent across reloads.
 	const PALETTE = ['#4169e1', '#2dcfa0', '#f0a840', '#e8566a', '#a2a8c1', '#7f86a3'];
@@ -132,7 +133,7 @@
 					<div class="stat-value">{data.data.bigNumbers.unassignedCount}</div>
 				</div>
 			{:else if w.type === 'untriaged_count'}
-				<div class="stat-card c-amber" style="height:100%;">
+				<div class="stat-card c-amber has-sub" style="height:100%;">
 					<div class="stat-label">{w.title}</div>
 					<div class="stat-value">{data.data.bigNumbers.untriagedCount}</div>
 					{#if data.data.bigNumbers.oldestUntriagedAgeMinutes != null}
@@ -171,7 +172,7 @@
 						<tbody>
 							{#each data.data.lists.oldestOpenTickets as t (t.id)}
 								<tr onclick={() => (window.location.href = `/tickets/${t.id}`)} style="cursor:pointer;">
-									<td style="font-family: var(--mono); font-size:11px;">{t.ticketNumber}</td>
+									<td><TicketNumber value={t.ticketNumber} /></td>
 									<td>{t.title}</td>
 									<td style="color: var(--color-text-muted);">{t.companyName}</td>
 								</tr>
@@ -204,7 +205,7 @@
 						<tbody>
 							{#each data.data.lists.slaAtRiskTickets as t (t.id)}
 								<tr onclick={() => (window.location.href = `/tickets/${t.id}`)} style="cursor:pointer;">
-									<td style="font-family: var(--mono); font-size:11px;">{t.ticketNumber}</td>
+									<td><TicketNumber value={t.ticketNumber} /></td>
 									<td>{t.title}</td>
 									<td><span class="badge badge-warning">{t.slaLabel}</span></td>
 								</tr>
@@ -222,3 +223,10 @@
 {#if data.widgets.length === 0}
 	<div class="empty">No widgets configured.</div>
 {/if}
+
+<style>
+	/* Two-row stat widgets are 94px tall. The subtitle variant needs a
+	   tighter vertical rhythm so its final line clears the card border. */
+	.stat-card.has-sub { padding-block: 10px; gap: 2px; }
+	.stat-card.has-sub .stat-sub { margin-top: auto; padding-bottom: 2px; }
+</style>

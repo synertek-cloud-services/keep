@@ -1,6 +1,14 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+// Singleton organization-wide settings. Timestamps remain UTC; this IANA
+// timezone controls business-calendar boundaries and presentation.
+export const organizationSettings = sqliteTable('organization_settings', {
+	id: text('id').primaryKey(), // deterministic singleton: organization-default
+	timezone: text('timezone').notNull().default('UTC'),
+	updatedAt: integer('updated_at').notNull()
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Auth: local accounts + Microsoft Entra ID SSO
 //

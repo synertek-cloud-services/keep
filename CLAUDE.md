@@ -33,6 +33,7 @@ src/
       ticketSort.ts   Validated sort-key set + Drizzle order-by resolution for the ticket list (see "Ticket list" below)
       companySort.ts  Validated company-directory sort resolution
       contractSort.ts Validated Contracts-directory sort resolution
+      settings.ts     Singleton organization-setting access/defaults
       users.ts        Per-user list-preference writes
       routing.ts      Issue-type -> queue resolution
       dashboardData.ts Widget aggregation queries
@@ -91,7 +92,7 @@ Cloudflare D1 (SQLite) via Drizzle ORM, `src/lib/server/db/schema.ts` — single
 
 **Generated via `drizzle-kit generate`, not hand-written.** This is the opposite of Beacon's current practice — Beacon's migration journal went stale at some point in its history (an artifact of manual edits/out-of-band DDL), so its `AGENTS.md` now forbids running `generate`. Keep starts clean and has no such baggage. Workflow: edit `schema.ts` → `make db-generate` → hand-append any baseline seed `INSERT`s to the newly generated file (generate only emits DDL, never data) → `make migrate-local` → `make type-check`. **Never** `drizzle-kit push`, **never** hand-edit an already-applied migration — that discipline is what keeps the journal from going stale the way Beacon's did.
 
-Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations since then (`0001`–`0007`) have all been pure DDL: dropping the unused `sso_exchange_codes` table, renaming `ticket_counters.year` → `date_key` for per-day ticket numbering, adding per-user preference storage on `users`, adding Contracts, and linking contracts to tickets/time entries.
+Baseline seed data (Standard SLA policy, issue-type taxonomy, default "General" queue, default dashboard + 10 widgets) ships as plain `INSERT`s with deterministic IDs inside migration `0000_ambitious_amazoness.sql` itself, so a fresh install is immediately usable. Migrations through `0007` are DDL-only changes for auth cleanup, per-day numbering, preferences, Contracts, and ticket/time-entry contract links. Migration `0008` adds `organization_settings` and appends the required singleton baseline row (`organization-default`, `America/Los_Angeles`).
 
 ## Auth system
 
@@ -126,6 +127,10 @@ See `src/lib/server/tickets.ts` and `src/lib/sla.ts` for the authoritative logic
 - `responseDueAt`/`resolutionDueAt` are **snapshotted** from the company's SLA policy at the moment priority is set (or at creation, for Integration tickets) — never recomputed live. Editing an SLA policy later does not retroactively change already-triaged tickets' due dates.
 - `slaState()` in `src/lib/sla.ts` is pure (no DB) specifically so it can be imported both server-side and by the client-side `SlaCountdown.svelte` component for a live-ticking badge that matches the server's judgment exactly.
 - `contractId` is also a snapshotted ticket association. Manual and Integration tickets created through `createTicket()` select the company's default only when it is Active and in term on that UTC date. Changing the company default later never rewrites existing tickets. Explicit changes must select an eligible contract belonging to the ticket's company; an already-selected contract remains visible/preservable if it later expires.
+
+## Organization settings and timezones
+
+Admin → General Settings owns the singleton `organization_settings` row. Timestamps always remain Unix UTC seconds; `timezone` is a validated IANA identifier used only where an organization-local calendar boundary or presentation is required. The baseline is `America/Los_Angeles`. Ticket numbering is the first consumer: `ticketDateKey()` derives `YYYYMMDD` in this timezone before the existing atomic daily-counter UPSERT. Changing the timezone never rewrites existing ticket numbers. Future date/time presentation, dashboard "today", reporting periods, Timesheets, and business-hours/holiday logic should all read this same setting instead of hard-coding a zone.
 
 ## Shared dashboard
 

@@ -39,6 +39,7 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 - Time entries snapshot the ticket's `contractId`, billing model, and hourly/overage rate at entry creation. Contract edits must not update historical time-entry billing fields.
 - Keep SLA-state math in the pure shared `src/lib/sla.ts` so server decisions and `SlaCountdown.svelte` cannot diverge.
 - Ticket-number claims must remain one atomic `INSERT ... ON CONFLICT ... RETURNING` statement in `src/lib/server/ticketNumber.ts`. Never replace it with read-then-write logic. The format is per-day `T-YYYYMMDD-XXXX`.
+- The ticket-number date key uses the validated IANA timezone from the singleton `organization_settings` row. Keep timestamps stored in UTC; use the setting only for business-calendar boundaries/presentation. Never rewrite existing numbers after a timezone change.
 
 ## Routes and data flow
 
@@ -69,7 +70,7 @@ Repository rules and invariants for AI assistants. Read `CLAUDE.md` for architec
 
 ## Current direction
 
-- V1 plus operational Contracts is implemented, with 48 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
+- V1 plus operational Contracts and organization timezone settings is implemented, with 51 tests, local demo worlds, dashboard widgets, admin CRUD, ticket ingestion, the configurable ticket-list pattern, and curated Companies/Contracts directories.
 - Contract money is integer cents, included time is integer minutes, and contract dates are UTC date-only epoch seconds. Preserve those representations and the one-default-per-company unique-index invariant.
 - Likely next work is building Timesheets, then contract consumption/invoicing rules only when requirements justify them.
 - Treat `PROJECT_LOG.md` as the current handoff record and add a new newest-first entry after substantial project work or an important decision.

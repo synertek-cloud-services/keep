@@ -7,6 +7,7 @@
 	import { PAGE_SIZE_OPTIONS } from '$lib/ticketPageSize';
 	import ColumnChooserModal from '$lib/components/ColumnChooserModal.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import TicketNumber from '$lib/components/TicketNumber.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -171,7 +172,7 @@
 				<tr onclick={() => goto(`/tickets/${t.id}`)} style="cursor: pointer;">
 					{#each columns as col (col.key)}
 						{#if col.key === 'ticketNumber'}
-							<td style="font-family: var(--mono); font-size: 11px;">{t.ticketNumber}</td>
+							<td><TicketNumber value={t.ticketNumber} /></td>
 						{:else if col.key === 'title'}
 							<td>
 								{t.title}
