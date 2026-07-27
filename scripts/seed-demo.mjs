@@ -25,10 +25,10 @@ const root = dirname(fileURLToPath(import.meta.url)) + '/..';
 // cannot span a reset. This deliberately ordered list drops child tables
 // before the parents they reference (see schema.ts for the FK graph).
 const resetTables = [
-	'notes', 'time_entries', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
+	'notes', 'time_entries', 'user_resource_roles', 'tickets', 'contracts', 'api_keys', 'routing_rules', 'contacts', 'companies',
 	'sub_issue_types', 'sla_policy_priorities', 'user_sessions', 'sso_group_role_mappings',
 	'sso_login_state', 'users', 'dashboard_widgets', 'issue_types', 'queues', 'sla_policies', 'organization_settings',
-	'sso_providers', 'dashboards', 'ticket_counters', 'd1_migrations'
+	'sso_providers', 'dashboards', 'ticket_counters', 'work_types', 'resource_roles', 'd1_migrations'
 ];
 const resetTableSet = new Set(resetTables);
 
@@ -256,8 +256,12 @@ export function buildWorldSql(
 	}
 
 	for (const tech of world.techs) {
+		const demoTechId = techId.get(tech.key);
 		sql.push(
-			`INSERT INTO users (id, email, display_name, role, is_active, password_hash, auth_source, created_at, updated_at) VALUES (${quote(techId.get(tech.key))}, ${quote(`${tech.key}@demo.invalid`)}, ${quote(tech.name)}, 'tech', 1, NULL, 'local', ${now}, ${now});`
+			`INSERT INTO users (id, email, display_name, role, is_active, password_hash, auth_source, created_at, updated_at) VALUES (${quote(demoTechId)}, ${quote(`${tech.key}@demo.invalid`)}, ${quote(tech.name)}, 'tech', 1, NULL, 'local', ${now}, ${now});`
+		);
+		sql.push(
+			`INSERT INTO user_resource_roles (user_id, resource_role_id, is_default) VALUES (${quote(demoTechId)}, 'resource-role-technician', 1);`
 		);
 	}
 
@@ -381,7 +385,7 @@ function resetLocal(options) {
 		.filter((name) => existing.includes(name))
 		.map((name) => `DROP TABLE IF EXISTS "${name}";`)
 		.join('\n');
-	executeSql(options, sql);
+	if (sql) executeSql(options, sql);
 	const args = ['migrations', 'apply', options.database, '--local'];
 	if (options.persistTo) args.push('--persist-to', options.persistTo);
 	try {

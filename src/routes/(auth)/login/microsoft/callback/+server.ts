@@ -115,8 +115,9 @@ export const GET: RequestHandler = async ({ url, cookies, platform, request }) =
 		const existingByEmail = await db.select().from(schema.users).where(eq(schema.users.email, email)).get();
 		if (existingByEmail) return fail('email_already_registered_locally');
 
+		const userId = crypto.randomUUID();
 		await db.insert(schema.users).values({
-			id: crypto.randomUUID(),
+			id: userId,
 			email,
 			displayName,
 			role,
@@ -128,6 +129,18 @@ export const GET: RequestHandler = async ({ url, cookies, platform, request }) =
 			updatedAt: now,
 			lastLoginAt: now
 		});
+		const defaultResourceRole = await db
+			.select({ id: schema.resourceRoles.id })
+			.from(schema.resourceRoles)
+			.where(eq(schema.resourceRoles.isDefault, true))
+			.get();
+		if (defaultResourceRole) {
+			await db.insert(schema.userResourceRoles).values({
+				userId,
+				resourceRoleId: defaultResourceRole.id,
+				isDefault: true
+			});
+		}
 	}
 
 	const user = await db

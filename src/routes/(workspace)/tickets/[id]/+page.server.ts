@@ -62,6 +62,9 @@ export const load: PageServerLoad = async ({ params, platform, locals }) => {
 			startAt: schema.timeEntries.startAt,
 			endAt: schema.timeEntries.endAt,
 			billingOffsetMinutes: schema.timeEntries.billingOffsetMinutes,
+			billableMinutes: schema.timeEntries.billableMinutes,
+			workTypeName: schema.timeEntries.workTypeName,
+			resourceRoleName: schema.timeEntries.resourceRoleName,
 			billable: schema.timeEntries.billable,
 			contractName: schema.contracts.name,
 			contractBillingModel: schema.timeEntries.contractBillingModel,
@@ -82,6 +85,19 @@ export const load: PageServerLoad = async ({ params, platform, locals }) => {
 	const subIssueTypes = await db.select().from(schema.subIssueTypes).orderBy(schema.subIssueTypes.sortOrder).all();
 	const queues = await db.select().from(schema.queues).orderBy(schema.queues.name).all();
 	const users = await db.select().from(schema.users).where(eq(schema.users.isActive, true)).all();
+	const workTypes = await db.select().from(schema.workTypes).where(eq(schema.workTypes.isActive, true)).orderBy(schema.workTypes.name).all();
+	const resourceRoles = await db
+		.select({
+			id: schema.resourceRoles.id,
+			name: schema.resourceRoles.name,
+			hourlyRateCents: schema.resourceRoles.hourlyRateCents,
+			isDefault: schema.userResourceRoles.isDefault
+		})
+		.from(schema.userResourceRoles)
+		.innerJoin(schema.resourceRoles, eq(schema.userResourceRoles.resourceRoleId, schema.resourceRoles.id))
+		.where(and(eq(schema.userResourceRoles.userId, locals.user!.id), eq(schema.resourceRoles.isActive, true)))
+		.orderBy(desc(schema.userResourceRoles.isDefault), schema.resourceRoles.name)
+		.all();
 	const today = utcDayStart(Math.floor(Date.now() / 1000));
 	const eligibleContractCondition = and(
 		eq(schema.contracts.status, 'active'),
@@ -140,12 +156,21 @@ export const load: PageServerLoad = async ({ params, platform, locals }) => {
 		queues,
 		users,
 		contracts,
+		workTypes,
+		resourceRoles,
 		workspaceLayout: resolveTicketWorkspaceLayout(
 			currentUser?.ticketWorkspaceLayout,
 			organizationSettings?.ticketWorkspaceLayout
 		),
 		hasPersonalWorkspace: Boolean(parseTicketWorkspaceLayout(currentUser?.ticketWorkspaceLayout)),
 		organizationTimezone,
+		timeSettings: {
+			businessStartMinute: organizationSettings?.businessStartMinute ?? 480,
+			businessEndMinute: organizationSettings?.businessEndMinute ?? 1080,
+			timeEntryIncrementMinutes: organizationSettings?.timeEntryIncrementMinutes ?? 5,
+			billingRoundingMinutes: organizationSettings?.billingRoundingMinutes ?? 15,
+			allowBillingOffset: organizationSettings?.allowBillingOffset ?? true
+		},
 		defaultTimeEntry: {
 			workDate: defaultEnd.date,
 			startTime: defaultStart.time,
@@ -273,10 +298,12 @@ export const actions: Actions = {
 		const internalNotes = String(form.get('internalNotes') ?? '').trim() || null;
 		const billableRaw = form.get('billable');
 		const billingOffsetMinutes = Number(form.get('billingOffsetMinutes') ?? 0);
+		const workTypeId = String(form.get('workTypeId') ?? '');
+		const resourceRoleId = String(form.get('resourceRoleId') ?? '');
 		const saveMode = String(form.get('saveMode') ?? 'close');
 
-		if (!workDateStr || !startTime || !endTime || !notes)
-			return fail(400, { error: 'Work date, start time, end time, and work performed are required.', keepTimeModalOpen: true });
+		if (!workDateStr || !startTime || !endTime || !notes || !workTypeId || !resourceRoleId)
+			return fail(400, { error: 'Date, times, Work Type, Resource Role, and work performed are required.', keepTimeModalOpen: true });
 
 		const db = getDb(platform!);
 		const timezone = await getOrganizationTimezone(db);
@@ -302,21 +329,27 @@ export const actions: Actions = {
 				return fail(400, { error: 'The selected ticket status transition is no longer valid.', keepTimeModalOpen: true });
 		}
 
-		await addTimeEntry(db, {
-			ticketId: params.id,
-			resourceId: locals.user!.id,
-			durationMinutes,
-			notes,
-			internalNotes,
-			workDate: Date.parse(`${workDateStr}T00:00:00Z`) / 1000,
-			startAt,
-			endAt,
-			billingOffsetMinutes,
-			// The checkbox is always present on this form (unlike the ingest
-			// API, which may genuinely omit billable and wants the company
-			// default) — an unchecked box means explicitly false, not "unset".
-			billable: billableRaw === 'on'
-		});
+		try {
+			await addTimeEntry(db, {
+				ticketId: params.id,
+				resourceId: locals.user!.id,
+				durationMinutes,
+				notes,
+				internalNotes,
+				workDate: Date.parse(`${workDateStr}T00:00:00Z`) / 1000,
+				startAt,
+				endAt,
+				billingOffsetMinutes,
+				workTypeId,
+				resourceRoleId,
+				billable: billableRaw === 'on'
+			});
+		} catch (e) {
+			return fail(400, {
+				error: e instanceof Error ? e.message : 'Failed to save the time entry.',
+				keepTimeModalOpen: true
+			});
+		}
 		if (requestedStatus) await setTicketStatus(db, params.id, requestedStatus);
 		return { success: true, timeEntrySaved: true, keepTimeModalOpen: saveMode === 'new' };
 	},

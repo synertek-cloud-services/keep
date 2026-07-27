@@ -7,6 +7,7 @@
 	import TicketWorkspaceEditor from '$lib/components/TicketWorkspaceEditor.svelte';
 	import TimeEntryTimeline from '$lib/components/TimeEntryTimeline.svelte';
 	import { BILLING_MODEL_LABELS, formatCentsForInput } from '$lib/contracts';
+	import { calculateBillableMinutes } from '$lib/timeEntryBilling';
 	import type { TicketWorkspaceWidgetId } from '$lib/ticketWorkspace';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -28,6 +29,10 @@
 	let offsetDirection = $state<-1 | 1>(-1);
 	let offsetHours = $state(0);
 	let offsetMinutes = $state(0);
+	// svelte-ignore state_referenced_locally
+	let selectedWorkTypeId = $state(data.workTypes.find((item) => item.isDefault)?.id ?? data.workTypes[0]?.id ?? '');
+	// svelte-ignore state_referenced_locally
+	let selectedResourceRoleId = $state(data.resourceRoles.find((item) => item.isDefault)?.id ?? data.resourceRoles[0]?.id ?? '');
 	let assignmentSaving = $state(false);
 	let assignmentSaved = $state(false);
 	let selectedCompanyId = $state(data.ticket.companyId);
@@ -48,7 +53,16 @@
 	let billingOffsetMinutes = $derived(
 		offsetDirection * (Math.max(0, Number(offsetHours) || 0) * 60 + Math.max(0, Number(offsetMinutes) || 0))
 	);
-	let minutesToBill = $derived(Math.max(0, calculatedMinutes + billingOffsetMinutes));
+	let selectedWorkType = $derived(data.workTypes.find((item) => item.id === selectedWorkTypeId));
+	let effectiveOffsetMinutes = $derived(data.timeSettings.allowBillingOffset ? billingOffsetMinutes : 0);
+	let minutesToBill = $derived(
+		selectedWorkType?.billableByDefault
+			? calculateBillableMinutes(calculatedMinutes, effectiveOffsetMinutes, {
+					minimumBillableMinutes: selectedWorkType.minimumBillableMinutes,
+					roundingMinutes: selectedWorkType.roundingMinutes ?? data.timeSettings.billingRoundingMinutes
+				})
+			: 0
+	);
 	let workedMinutes = $derived(data.timeEntries.reduce((total, entry) => total + entry.durationMinutes, 0));
 	let remainingMinutes = $derived(
 		data.ticket.estimatedMinutes == null ? null : Math.max(0, data.ticket.estimatedMinutes - workedMinutes)
@@ -198,9 +212,9 @@
 	{:else if id === 'time-history'}
 		<section class="workspace-widget">
 			<h2>Time Entry History <span class="row-count-badge">{data.timeEntries.length}</span></h2>
-			<div class="table-scroll"><table><thead><tr><th>Date</th><th>Start–End</th><th>Tech</th><th>Duration</th><th>Work Performed</th><th>Contract</th><th>Billing</th><th></th></tr></thead><tbody>
-				{#each data.timeEntries as entry}<tr><td>{new Date(entry.workDate * 1000).toLocaleDateString(undefined, { timeZone: 'UTC' })}</td><td>{entry.startAt && entry.endAt ? `${new Date(entry.startAt * 1000).toLocaleTimeString([], { timeZone: data.organizationTimezone, hour: 'numeric', minute: '2-digit' })}–${new Date(entry.endAt * 1000).toLocaleTimeString([], { timeZone: data.organizationTimezone, hour: 'numeric', minute: '2-digit' })}` : '—'}</td><td>{entry.resourceName ?? entry.resourceEmail}</td><td>{entry.durationMinutes} min</td><td>{entry.notes ?? '—'}{#if entry.internalNotes}<div class="internal-time-note">Internal: {entry.internalNotes}</div>{/if}</td><td>{entry.contractName ?? 'No contract'}</td><td>{billingContext(entry)}</td><td><form method="POST" action="?/deleteTimeEntry" use:enhance><input type="hidden" name="entryId" value={entry.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form></td></tr>
-				{:else}<tr><td colspan="8" class="empty">No time entries yet.</td></tr>{/each}
+			<div class="table-scroll"><table><thead><tr><th>Date</th><th>Start–End</th><th>Tech</th><th>Work Type / Role</th><th>Worked</th><th>Billable</th><th>Work Performed</th><th>Contract</th><th>Billing</th><th></th></tr></thead><tbody>
+				{#each data.timeEntries as entry}<tr><td>{new Date(entry.workDate * 1000).toLocaleDateString(undefined, { timeZone: 'UTC' })}</td><td>{entry.startAt && entry.endAt ? `${new Date(entry.startAt * 1000).toLocaleTimeString([], { timeZone: data.organizationTimezone, hour: 'numeric', minute: '2-digit' })}–${new Date(entry.endAt * 1000).toLocaleTimeString([], { timeZone: data.organizationTimezone, hour: 'numeric', minute: '2-digit' })}` : '—'}</td><td>{entry.resourceName ?? entry.resourceEmail}</td><td>{entry.workTypeName ?? '—'}<div class="internal-time-note">{entry.resourceRoleName ?? '—'}</div></td><td>{entry.durationMinutes} min</td><td>{entry.billableMinutes ?? entry.durationMinutes} min</td><td>{entry.notes ?? '—'}{#if entry.internalNotes}<div class="internal-time-note">Internal: {entry.internalNotes}</div>{/if}</td><td>{entry.contractName ?? 'No contract'}</td><td>{billingContext(entry)}</td><td><form method="POST" action="?/deleteTimeEntry" use:enhance><input type="hidden" name="entryId" value={entry.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form></td></tr>
+				{:else}<tr><td colspan="10" class="empty">No time entries yet.</td></tr>{/each}
 			</tbody></table></div>
 		</section>
 	{:else if id === 'status-sla'}
@@ -261,8 +275,9 @@
 							<div class="billing-grid">
 								<div><span>Contract</span><strong>{currentTicketContract?.name ?? 'No contract'}</strong></div>
 								<div><span>Billing model</span><strong>{currentTicketContract?.billingModel ? BILLING_MODEL_LABELS[currentTicketContract.billingModel] : 'No contract'}</strong></div>
-								<label class="check-row"><input type="checkbox" name="billable" checked={data.company?.defaultBillable ?? true} /> Billable time</label>
+								<div><span>Billing treatment</span><strong>{selectedWorkType?.billableByDefault ? 'Billable' : 'Non-billable'}</strong></div>
 							</div>
+							{#if selectedWorkType?.billableByDefault}<input type="hidden" name="billable" value="on" />{/if}
 							<p class="section-help">Contract and rate context are snapshotted when this entry is saved.</p>
 						</section>
 
@@ -275,17 +290,24 @@
 								bind:endsNextDay
 								timezone={data.organizationTimezone}
 								entries={data.timeEntries}
+								businessStartMinute={data.timeSettings.businessStartMinute}
+								businessEndMinute={data.timeSettings.businessEndMinute}
+								incrementMinutes={data.timeSettings.timeEntryIncrementMinutes}
 							/>
 							<input type="hidden" name="workDate" value={timeWorkDate} />
 							<div class="time-fields">
-								<div class="field"><label for="startTime">Start time</label><input class="picker-input" bind:this={startTimePicker} id="startTime" name="startTime" type="time" step="300" bind:value={timeStart} onclick={() => startTimePicker?.showPicker?.()} required /></div>
-								<div class="field"><label for="endTime">End time</label><input class="picker-input" bind:this={endTimePicker} id="endTime" name="endTime" type="time" step="300" bind:value={timeEnd} onclick={() => endTimePicker?.showPicker?.()} required /></div>
+								<div class="field"><label for="startTime">Start time</label><input class="picker-input" bind:this={startTimePicker} id="startTime" name="startTime" type="time" step={data.timeSettings.timeEntryIncrementMinutes * 60} bind:value={timeStart} onclick={() => startTimePicker?.showPicker?.()} required /></div>
+								<div class="field"><label for="endTime">End time</label><input class="picker-input" bind:this={endTimePicker} id="endTime" name="endTime" type="time" step={data.timeSettings.timeEntryIncrementMinutes * 60} bind:value={timeEnd} onclick={() => endTimePicker?.showPicker?.()} required /></div>
 								<div class="field"><span class="field-label">Time worked</span><div class="read-field duration" class:invalid={calculatedMinutes <= 0 || calculatedMinutes > 1440}>{calculatedMinutes > 0 ? `${Math.floor(calculatedMinutes / 60)}h ${calculatedMinutes % 60}m` : 'Check times'}</div></div>
 								<label class="check-row overnight"><input type="checkbox" name="endsNextDay" bind:checked={endsNextDay} /> Ends next day</label>
 							</div>
 							<p class="section-help">Times use the organization timezone: {data.organizationTimezone}.</p>
+							<div class="time-rule-fields">
+								<div class="field"><label for="workTypeId">Work Type</label><select id="workTypeId" name="workTypeId" bind:value={selectedWorkTypeId} required>{#each data.workTypes as item}<option value={item.id}>{item.name}</option>{/each}</select></div>
+								<div class="field"><label for="resourceRoleId">Resource Role</label><select id="resourceRoleId" name="resourceRoleId" bind:value={selectedResourceRoleId} required>{#each data.resourceRoles as item}<option value={item.id}>{item.name}</option>{/each}</select></div>
+							</div>
 							<div class="timeline-billing">
-								<div class="offset-control">
+								{#if data.timeSettings.allowBillingOffset}<div class="offset-control">
 									<span>Billing offset</span>
 									<div class="offset-entry">
 										<button class:active={offsetDirection === -1} type="button" onclick={() => (offsetDirection = -1)} aria-label="Subtract billing offset">−</button>
@@ -293,10 +315,10 @@
 										<label><input type="number" min="0" max="23" step="1" bind:value={offsetHours} aria-label="Billing offset hours" /><span>h</span></label>
 										<label><input type="number" min="0" max="59" step="5" bind:value={offsetMinutes} aria-label="Billing offset minutes" /><span>m</span></label>
 									</div>
-								</div>
+								</div>{/if}
 								<div class="hours-to-bill"><span>Hours to bill</span><strong>{Math.floor(minutesToBill / 60)}h {minutesToBill % 60}m</strong></div>
 							</div>
-							<input type="hidden" name="billingOffsetMinutes" value={billingOffsetMinutes} />
+							<input type="hidden" name="billingOffsetMinutes" value={effectiveOffsetMinutes} />
 							<div class="field summary-notes"><label for="teNotes">Summary notes <span class="required">Required</span></label><textarea id="teNotes" name="notes" rows="5" placeholder="Describe the work performed. This may be customer-facing." required></textarea></div>
 							<div class="field"><label for="internalNotes">Internal notes</label><textarea id="internalNotes" name="internalNotes" rows="3" placeholder="Diagnostic or operational detail that customers should not see"></textarea></div>
 						</section>
@@ -373,6 +395,7 @@
 	.billing-context, .time-details-section { grid-column:1 / -1; }
 	.time-form-section h3 { margin:0 0 14px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
 	.time-fields { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:0 12px; }
+	.time-rule-fields { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; margin-top:12px; }
 	.read-field { min-height:34px; padding:8px 10px; border:1px solid var(--color-border); border-radius:var(--r-btn); background:var(--color-canvas); font-size:12px; }
 	.picker-input { cursor:pointer; }
 	.field-label { display:block; margin-bottom:5px; color:var(--color-text-muted); font-size:11px; font-weight:600; }
@@ -423,6 +446,7 @@
 		.workspace-column:last-child { grid-column:auto; display:flex; }
 		.time-modal-body { grid-template-columns:1fr; }
 		.time-fields { grid-template-columns:1fr; }
+		.time-rule-fields { grid-template-columns:1fr; }
 		.overnight { grid-column:auto; }
 		.billing-context, .time-details-section { grid-column:auto; }
 		.billing-grid { grid-template-columns:1fr; }

@@ -6,6 +6,12 @@ import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm
 export const organizationSettings = sqliteTable('organization_settings', {
 	id: text('id').primaryKey(), // deterministic singleton: organization-default
 	timezone: text('timezone').notNull().default('UTC'),
+	businessDays: text('business_days').notNull().default('[1,2,3,4,5]'),
+	businessStartMinute: integer('business_start_minute').notNull().default(480),
+	businessEndMinute: integer('business_end_minute').notNull().default(1080),
+	timeEntryIncrementMinutes: integer('time_entry_increment_minutes').notNull().default(5),
+	billingRoundingMinutes: integer('billing_rounding_minutes').notNull().default(15),
+	allowBillingOffset: integer('allow_billing_offset', { mode: 'boolean' }).notNull().default(true),
 	// Versioned JSON TicketWorkspaceLayout. Null falls back to the
 	// application default in $lib/ticketWorkspace.ts.
 	ticketWorkspaceLayout: text('ticket_workspace_layout'),
@@ -231,6 +237,58 @@ export const contracts = sqliteTable(
 	]
 );
 
+export const workTypes = sqliteTable(
+	'work_types',
+	{
+		id: text('id').primaryKey(),
+		name: text('name').notNull(),
+		code: text('code'),
+		description: text('description'),
+		isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+		isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+		billableByDefault: integer('billable_by_default', { mode: 'boolean' }).notNull().default(true),
+		minimumBillableMinutes: integer('minimum_billable_minutes').notNull().default(0),
+		roundingMinutes: integer('rounding_minutes'),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull()
+	},
+	(t) => [uniqueIndex('work_types_one_default').on(t.isDefault).where(sql`${t.isDefault} = 1`)]
+);
+
+export const resourceRoles = sqliteTable(
+	'resource_roles',
+	{
+		id: text('id').primaryKey(),
+		name: text('name').notNull(),
+		description: text('description'),
+		isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+		isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+		hourlyRateCents: integer('hourly_rate_cents').notNull().default(0),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull()
+	},
+	(t) => [uniqueIndex('resource_roles_one_default').on(t.isDefault).where(sql`${t.isDefault} = 1`)]
+);
+
+export const userResourceRoles = sqliteTable(
+	'user_resource_roles',
+	{
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		resourceRoleId: text('resource_role_id')
+			.notNull()
+			.references(() => resourceRoles.id, { onDelete: 'cascade' }),
+		isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false)
+	},
+	(t) => [
+		primaryKey({ columns: [t.userId, t.resourceRoleId] }),
+		uniqueIndex('user_resource_roles_one_default')
+			.on(t.userId)
+			.where(sql`${t.isDefault} = 1`)
+	]
+);
+
 export const queues = sqliteTable('queues', {
 	id: text('id').primaryKey(),
 	name: text('name').notNull(),
@@ -412,6 +470,14 @@ export const timeEntries = sqliteTable('time_entries', {
 	startAt: integer('start_at'),
 	endAt: integer('end_at'),
 	billingOffsetMinutes: integer('billing_offset_minutes').notNull().default(0),
+	workTypeId: text('work_type_id').references(() => workTypes.id),
+	resourceRoleId: text('resource_role_id').references(() => resourceRoles.id),
+	workTypeName: text('work_type_name'),
+	resourceRoleName: text('resource_role_name'),
+	resourceRoleRateCents: integer('resource_role_rate_cents'),
+	minimumBillableMinutes: integer('minimum_billable_minutes').notNull().default(0),
+	billingRoundingMinutes: integer('billing_rounding_minutes').notNull().default(0),
+	billableMinutes: integer('billable_minutes'),
 	// Defaults from company.defaultBillable at entry-creation time, overridable per entry.
 	billable: integer('billable', { mode: 'boolean' }).notNull().default(true),
 	createdAt: integer('created_at').notNull()

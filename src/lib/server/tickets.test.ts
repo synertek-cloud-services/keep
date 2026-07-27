@@ -165,11 +165,80 @@ describe('ticket contract assignment', () => {
 		expect(entry?.endAt).toBe(Date.UTC(2026, 6, 27, 17) / 1000);
 		expect(entry?.internalNotes).toBe('Diagnostic detail');
 		expect(entry?.billingOffsetMinutes).toBe(-15);
+		expect(entry?.workTypeName).toBe('Standard Support');
+		expect(entry?.resourceRoleName).toBe('Technician');
+		expect(entry?.billableMinutes).toBe(45);
+
+		await db
+			.update(schema.workTypes)
+			.set({ name: 'Renamed Support', minimumBillableMinutes: 120, roundingMinutes: 60 })
+			.where(eq(schema.workTypes.id, 'work-type-standard-support'));
+		await db
+			.update(schema.resourceRoles)
+			.set({ name: 'Renamed Technician', hourlyRateCents: 30_000 })
+			.where(eq(schema.resourceRoles.id, 'resource-role-technician'));
+		const unchanged = await db.select().from(schema.timeEntries).where(eq(schema.timeEntries.id, entry!.id)).get();
+		expect(unchanged?.workTypeName).toBe('Standard Support');
+		expect(unchanged?.resourceRoleName).toBe('Technician');
+		expect(unchanged?.billableMinutes).toBe(45);
+		await db
+			.update(schema.workTypes)
+			.set({ name: 'Standard Support', minimumBillableMinutes: 0, roundingMinutes: null })
+			.where(eq(schema.workTypes.id, 'work-type-standard-support'));
+		await db
+			.update(schema.resourceRoles)
+			.set({ name: 'Technician', hourlyRateCents: 0 })
+			.where(eq(schema.resourceRoles.id, 'resource-role-technician'));
 
 		await db
 			.update(schema.contracts)
 			.set({ billingModel: 'included_hours', hourlyRateCents: 15_000 })
 			.where(eq(schema.contracts.id, defaultContractId));
+	});
+
+	it('rejects a Resource Role that is not assigned to the technician', async () => {
+		const now = Math.floor(Date.now() / 1000);
+		const unassignedRoleId = crypto.randomUUID();
+		await db.insert(schema.resourceRoles).values({
+			id: unassignedRoleId,
+			name: 'Unassigned Specialist',
+			hourlyRateCents: 20_000,
+			createdAt: now,
+			updatedAt: now
+		});
+		const ticket = await createTicket(db, { title: 'Role validation', companyId, source: 'manual' });
+		await expect(
+			addTimeEntry(db, {
+				ticketId: ticket.id,
+				resourceId,
+				resourceRoleId: unassignedRoleId,
+				durationMinutes: 30,
+				workDate: Date.UTC(2026, 6, 27) / 1000
+			})
+		).rejects.toThrow('not assigned');
+	});
+
+	it('ignores billing offsets when organization policy disables them', async () => {
+		await db
+			.update(schema.organizationSettings)
+			.set({ allowBillingOffset: false })
+			.where(eq(schema.organizationSettings.id, 'organization-default'));
+		const ticket = await createTicket(db, { title: 'Offset policy', companyId, source: 'manual' });
+		await addTimeEntry(db, {
+			ticketId: ticket.id,
+			resourceId,
+			durationMinutes: 30,
+			billingOffsetMinutes: 30,
+			workDate: Date.UTC(2026, 6, 27) / 1000,
+			billable: true
+		});
+		const entry = await db.select().from(schema.timeEntries).where(eq(schema.timeEntries.ticketId, ticket.id)).get();
+		expect(entry?.billingOffsetMinutes).toBe(0);
+		expect(entry?.billableMinutes).toBe(30);
+		await db
+			.update(schema.organizationSettings)
+			.set({ allowBillingOffset: true })
+			.where(eq(schema.organizationSettings.id, 'organization-default'));
 	});
 });
 

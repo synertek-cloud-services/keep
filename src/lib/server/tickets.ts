@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { Db } from './db';
 import * as schema from './db/schema';
+import { calculateBillableMinutes } from '$lib/timeEntryBilling';
 import { claimTicketNumber } from './ticketNumber';
 import { resolveQueueForIssueType } from './routing';
 import { resolveDefaultContract, validateEligibleContract } from './contracts';
@@ -244,6 +245,8 @@ export async function addTimeEntry(
 		endAt?: number | null;
 		billingOffsetMinutes?: number;
 		billable?: boolean | null;
+		workTypeId?: string | null;
+		resourceRoleId?: string | null;
 	}
 ): Promise<void> {
 	let billable = input.billable;
@@ -276,6 +279,34 @@ export async function addTimeEntry(
 				.where(eq(schema.contracts.id, ticket.contractId))
 				.get()
 		: null;
+	const workType = input.workTypeId
+		? await db.select().from(schema.workTypes).where(eq(schema.workTypes.id, input.workTypeId)).get()
+		: await db.select().from(schema.workTypes).where(eq(schema.workTypes.isDefault, true)).get();
+	if (!workType || !workType.isActive) throw new Error('Choose an active Work Type.');
+	const assignedRoles = await db
+		.select({ role: schema.resourceRoles })
+		.from(schema.userResourceRoles)
+		.innerJoin(schema.resourceRoles, eq(schema.userResourceRoles.resourceRoleId, schema.resourceRoles.id))
+		.where(eq(schema.userResourceRoles.userId, input.resourceId))
+		.all();
+	const resourceRole =
+		assignedRoles.find(({ role }) => role.id === input.resourceRoleId)?.role ??
+		assignedRoles.find(({ role }) => role.isDefault)?.role ??
+		assignedRoles.find(({ role }) => role.isActive)?.role ??
+		(await db.select().from(schema.resourceRoles).where(eq(schema.resourceRoles.isDefault, true)).get());
+	if (!resourceRole || !resourceRole.isActive) throw new Error('Choose an active Resource Role assigned to this technician.');
+	if (input.resourceRoleId && !assignedRoles.some(({ role }) => role.id === input.resourceRoleId))
+		throw new Error('That Resource Role is not assigned to this technician.');
+	const settings = await db.select().from(schema.organizationSettings).where(eq(schema.organizationSettings.id, 'organization-default')).get();
+	const billingOffsetMinutes = settings?.allowBillingOffset ? (input.billingOffsetMinutes ?? 0) : 0;
+	if (input.billable == null) billable = workType.billableByDefault;
+	const billingRoundingMinutes = workType.roundingMinutes ?? settings?.billingRoundingMinutes ?? 0;
+	const billableMinutes = billable
+		? calculateBillableMinutes(input.durationMinutes, billingOffsetMinutes, {
+				minimumBillableMinutes: workType.minimumBillableMinutes,
+				roundingMinutes: billingRoundingMinutes
+			})
+		: 0;
 
 	await db.insert(schema.timeEntries).values({
 		id: crypto.randomUUID(),
@@ -290,7 +321,15 @@ export async function addTimeEntry(
 		workDate: input.workDate,
 		startAt: input.startAt ?? null,
 		endAt: input.endAt ?? null,
-		billingOffsetMinutes: input.billingOffsetMinutes ?? 0,
+		billingOffsetMinutes,
+		workTypeId: workType.id,
+		resourceRoleId: resourceRole.id,
+		workTypeName: workType.name,
+		resourceRoleName: resourceRole.name,
+		resourceRoleRateCents: resourceRole.hourlyRateCents,
+		minimumBillableMinutes: workType.minimumBillableMinutes,
+		billingRoundingMinutes,
+		billableMinutes,
 		billable,
 		createdAt: Math.floor(Date.now() / 1000)
 	});

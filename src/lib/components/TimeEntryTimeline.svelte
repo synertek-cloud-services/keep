@@ -7,7 +7,10 @@
 		endTime = $bindable(),
 		endsNextDay = $bindable(),
 		timezone,
-		entries
+		entries,
+		businessStartMinute = 480,
+		businessEndMinute = 1080,
+		incrementMinutes = 5
 	}: {
 		date: string;
 		startTime: string;
@@ -15,6 +18,9 @@
 		endsNextDay: boolean;
 		timezone: string;
 		entries: { startAt: number | null; endAt: number | null }[];
+		businessStartMinute?: number;
+		businessEndMinute?: number;
+		incrementMinutes?: number;
 	} = $props();
 
 	let timeline: HTMLDivElement;
@@ -23,11 +29,17 @@
 	let dragMode = $state<'new' | 'start' | 'end' | null>(null);
 	let highlightStart = $state(0);
 	let highlightEnd = $state(15);
-	const businessStart = 8 * 60;
-	const businessEnd = 18 * 60;
-	const viewStart = businessStart - 15;
-	const viewEnd = businessEnd + 15;
-	const viewDuration = viewEnd - viewStart;
+	let businessStart = $derived(businessStartMinute);
+	let businessEnd = $derived(businessEndMinute);
+	let viewStart = $derived(businessStart - 15);
+	let viewEnd = $derived(businessEnd + 15);
+	let viewDuration = $derived(viewEnd - viewStart);
+	let ticks = $derived(
+		Array.from(
+			{ length: Math.max(0, Math.floor(businessEnd / 120) - Math.ceil(businessStart / 120) + 1) },
+			(_, index) => (Math.ceil(businessStart / 120) + index) * 120
+		)
+	);
 
 	function shiftDate(value: string, days: number): string {
 		const parsed = new Date(`${value}T00:00:00Z`);
@@ -59,7 +71,7 @@
 		const rect = timeline.getBoundingClientRect();
 		return Math.max(
 			viewStart,
-			Math.min(viewEnd, Math.round((viewStart + ((clientX - rect.left) / rect.width) * viewDuration) / 5) * 5)
+			Math.min(viewEnd, Math.round((viewStart + ((clientX - rect.left) / rect.width) * viewDuration) / incrementMinutes) * incrementMinutes)
 		);
 	}
 
@@ -68,18 +80,18 @@
 		let start: number;
 		let end: number;
 		if (dragMode === 'start') {
-			start = Math.min(current, dragAnchor - 15);
+			start = Math.min(current, dragAnchor - incrementMinutes);
 			end = dragAnchor;
 		} else if (dragMode === 'end') {
 			start = dragAnchor;
-			end = Math.max(current, dragAnchor + 15);
+			end = Math.max(current, dragAnchor + incrementMinutes);
 		} else {
 			start = Math.min(dragAnchor, current);
 			end = Math.max(dragAnchor, current);
 		}
 		start = Math.max(viewStart, start);
 		end = Math.min(viewEnd, end);
-		if (end === start) end = Math.min(viewEnd, start + 15);
+		if (end === start) end = Math.min(viewEnd, start + incrementMinutes);
 		highlightStart = start;
 		highlightEnd = end;
 		startTime = timeValue(start);
@@ -106,8 +118,8 @@
 			updateSelection(current);
 		} else {
 			dragMode = 'new';
-			dragAnchor = Math.min(viewEnd - 15, current);
-			updateSelection(dragAnchor + 15);
+			dragAnchor = Math.min(viewEnd - incrementMinutes, current);
+			updateSelection(dragAnchor + incrementMinutes);
 		}
 	}
 
@@ -196,20 +208,20 @@
 	onpointerup={pointerUp}
 	onpointercancel={pointerUp}
 >
-	<div class="business-hours"></div>
+	<div class="business-hours" style:left={`${((businessStart - viewStart) / viewDuration) * 100}%`} style:width={`${((businessEnd - businessStart) / viewDuration) * 100}%`}></div>
 	{#each existingBlocks as block}
 		<div class="existing-block" style={`left:${((block.start - viewStart) / viewDuration) * 100}%;width:${((block.end - block.start) / viewDuration) * 100}%`}></div>
 	{/each}
 	<svg class="selection-layer" viewBox={`${viewStart} 0 ${viewDuration} 54`} preserveAspectRatio="none" aria-hidden="true">
-		<rect class="selected-block" x={highlightStart} y="0" width={Math.max(15, highlightEnd - highlightStart)} height="54" />
+		<rect class="selected-block" x={highlightStart} y="0" width={Math.max(incrementMinutes, highlightEnd - highlightStart)} height="54" />
 		<line class="selection-handle" x1={highlightStart} x2={highlightStart} y1="0" y2="54" />
 		<line class="selection-handle" x1={highlightEnd} x2={highlightEnd} y1="0" y2="54" />
 	</svg>
-	{#each [480, 600, 720, 840, 960, 1080] as tick}
+	{#each ticks as tick}
 		<div class="tick" style={`left:${((tick - viewStart) / viewDuration) * 100}%`}><span>{tick / 60}:00</span></div>
 	{/each}
 </div>
-<p class="timeline-help">Drag an edge to adjust Start or End in 5-minute increments. Drag elsewhere to select a new range. Dark blocks are existing entries.</p>
+<p class="timeline-help">Drag an edge to adjust Start or End in {incrementMinutes}-minute increments. Drag elsewhere to select a new range. Dark blocks are existing entries.</p>
 
 <style>
 	.day-picker { position:relative; display:grid; grid-template-columns:repeat(6, minmax(62px,1fr)) auto; gap:5px; margin-bottom:14px; }
@@ -221,8 +233,8 @@
 	.calendar-button { width:48px; padding:0; }
 	.calendar-button :global(.calendar-icon) { width:18px; height:18px; }
 	.hidden-calendar { position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; }
-	.timeline { position:relative; height:54px; overflow:visible; border:1px solid var(--color-border); border-radius:var(--r-btn); background:repeating-linear-gradient(to right, transparent 0, transparent calc(9.524% - 1px), color-mix(in srgb, var(--color-border) 65%, transparent) calc(9.524% - 1px), color-mix(in srgb, var(--color-border) 65%, transparent) 9.524%); cursor:crosshair; touch-action:none; user-select:none; }
-	.business-hours { position:absolute; z-index:3; inset:-5px auto -5px 2.381%; width:95.238%; border-inline:1px dashed var(--color-text-muted); opacity:.75; pointer-events:none; }
+	.timeline { position:relative; height:54px; overflow:visible; border:1px solid var(--color-border); border-radius:var(--r-btn); background:var(--color-canvas); cursor:crosshair; touch-action:none; user-select:none; }
+	.business-hours { position:absolute; z-index:3; top:-5px; bottom:-5px; border-inline:1px dashed var(--color-text-muted); opacity:.75; pointer-events:none; }
 	.existing-block { position:absolute; top:22px; height:16px; border-radius:3px; pointer-events:none; }
 	.existing-block { background:color-mix(in srgb, var(--color-accent) 24%, var(--color-surface)); border:1px solid color-mix(in srgb, var(--color-accent) 60%, var(--color-border)); opacity:.7; }
 	.selection-layer { position:absolute; z-index:2; inset:0; width:100%; height:100%; pointer-events:none; }

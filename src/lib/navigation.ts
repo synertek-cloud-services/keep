@@ -89,6 +89,8 @@ export const NAV_SECTIONS: NavSection[] = [
 					{ label: 'Queues', href: '/queues' },
 					{ label: 'SLA Policies', href: '/sla-policies' },
 					{ label: 'Issue Types', href: '/issue-types' },
+					{ label: 'Work Types', href: '/work-types' },
+					{ label: 'Resource Roles', href: '/resource-roles' },
 					{ label: 'Routing Rules', href: '/routing-rules' }
 				]
 			},

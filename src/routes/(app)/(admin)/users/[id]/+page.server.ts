@@ -1,20 +1,21 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { getDb } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { hashPassword } from '$lib/server/auth/password';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
+	const db = getDb(platform!);
+	const resourceRoles = await db.select().from(schema.resourceRoles).orderBy(asc(schema.resourceRoles.name)).all();
 	if (params.id === 'new') {
-		return { isNew: true, editUser: null };
+		return { isNew: true, editUser: null, resourceRoles, assignedRoles: [] };
 	}
 
-	const db = getDb(platform!);
 	const editUser = await db.select().from(schema.users).where(eq(schema.users.id, params.id)).get();
 	if (!editUser) error(404, { message: 'User not found' });
-
-	return { isNew: false, editUser };
+	const assignedRoles = await db.select().from(schema.userResourceRoles).where(eq(schema.userResourceRoles.userId, params.id)).all();
+	return { isNew: false, editUser, resourceRoles, assignedRoles };
 };
 
 export const actions: Actions = {
@@ -24,6 +25,8 @@ export const actions: Actions = {
 		const displayName = String(form.get('displayName') ?? '').trim() || null;
 		const role = String(form.get('role') ?? 'tech');
 		const password = String(form.get('password') ?? '');
+		const selectedRoleIds = form.getAll('resourceRoleIds').map(String);
+		const defaultResourceRoleId = String(form.get('defaultResourceRoleId') ?? '');
 
 		if (!email || (role !== 'admin' && role !== 'tech')) {
 			return fail(400, { error: 'A valid email and role are required.' });
@@ -32,11 +35,18 @@ export const actions: Actions = {
 		const db = getDb(platform!);
 		const now = Math.floor(Date.now() / 1000);
 		const isNew = params.id === 'new';
+		const userId = isNew ? crypto.randomUUID() : params.id;
+		const validRoles = await db.select().from(schema.resourceRoles).where(eq(schema.resourceRoles.isActive, true)).all();
+		const validRoleIds = new Set(validRoles.map((item) => item.id));
+		const assignments = selectedRoleIds.filter((id) => validRoleIds.has(id));
+		const fallbackRole = validRoles.find((item) => item.isDefault);
+		if (!assignments.length && fallbackRole) assignments.push(fallbackRole.id);
+		const effectiveDefault = assignments.includes(defaultResourceRoleId) ? defaultResourceRoleId : assignments[0];
 
 		if (isNew) {
 			if (!password) return fail(400, { error: 'A password is required for a new user.' });
 			await db.insert(schema.users).values({
-				id: crypto.randomUUID(),
+				id: userId,
 				email,
 				displayName,
 				role: role as 'admin' | 'tech',
@@ -55,6 +65,14 @@ export const actions: Actions = {
 			};
 			if (password) updates.passwordHash = await hashPassword(password);
 			await db.update(schema.users).set(updates).where(eq(schema.users.id, params.id));
+		}
+		await db.delete(schema.userResourceRoles).where(eq(schema.userResourceRoles.userId, userId));
+		for (const resourceRoleId of assignments) {
+			await db.insert(schema.userResourceRoles).values({
+				userId,
+				resourceRoleId,
+				isDefault: resourceRoleId === effectiveDefault
+			});
 		}
 
 		redirect(303, '/users');

@@ -4,6 +4,16 @@ Running session-by-session log of status, decisions, and open follow-ups. Newest
 
 ---
 
+## 2026-07-27 (cont'd 5) — Time-entry policy, Work Types, and Resource Roles
+
+Added organization-controlled working days, business hours, entry increments, default billing rounding, and billing-offset permission to General Settings. The ticket timeline now derives its visible window and drag increment from those settings rather than hard-coded values.
+
+Added admin-managed Work Types and Resource Roles plus per-user role assignments/defaults. Time entry selects an active Work Type and one of the technician's assigned active roles. Billing follows a deterministic order: actual minutes plus permitted offset, then Work Type minimum, then Work Type or organization rounding. Work Type billability drives the entry instead of a disconnected checkbox.
+
+Migration `0012_daffy_thunderball.sql` creates the reference and assignment tables, extends organization settings, and adds immutable billing snapshots to time entries. It ships Standard Support and Technician baseline records, assigns existing users the baseline role, and backfills historical entries without retroactively rounding them. Demo users are assigned the baseline role explicitly.
+
+The ticket workspace review also replaced the temporary consolidated structural editor with in-place editing: Customer & Contract and Classification morph between display values and selectors inside their existing widgets; the page-level Edit Ticket action enables those panes and Ticket Details together without inserting another form above the canvas. The time-entry timeline is a compact business-hours range with resizable edges, manual time synchronization, themed native controls, and subdued Autotask-informed styling.
+
 ## 2026-07-27 (cont'd 4) — Configurable ticket workspace
 
 Replaced the ticket detail page's single long column with an Autotask-informed, responsive three-column workspace. The fixed header keeps ticket identity and the page below renders eight focused widgets: Customer & Contract, Assignment, Classification, Ticket Details, Activity, Time Entry History, Status & SLA, and Log Time. The smart default uses a narrow/wide/narrow `3/6/3` composition; two additional constrained presets (`3/7/2`, `2/7/3`) preserve coherent information hierarchy without arbitrary grid sizing. Tablet and mobile breakpoints collapse the rails predictably.
