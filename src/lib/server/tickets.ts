@@ -10,6 +10,7 @@ import {
 	computeTriageDueAt,
 	computeResponseResolutionDueAt,
 	TRANSITIONS,
+	PRIORITIES,
 	type TicketStatus,
 	type Priority
 } from '$lib/sla';
@@ -121,6 +122,41 @@ export async function createTicket(db: Db, input: CreateTicketInput) {
 	}
 
 	return (await db.select().from(schema.tickets).where(eq(schema.tickets.id, id)).get())!;
+}
+
+export interface FoldIngestRecurrenceInput {
+	priority: Priority;
+	// Note author for the recurrence note — typically the ingest API key's
+	// createdBy admin (see verifyApiKey in lib/server/auth/apiKeys.ts). Note
+	// is skipped entirely when null (key has no recorded creator).
+	noteResourceId?: string | null;
+}
+
+// Called by the ingest endpoint (api/tickets/ingest/+server.ts) when a
+// re-ingested (ingestApiKeyId, externalRef) pair matches an existing ticket
+// that isn't closed yet (see the partial tickets_ingest_dedup index in
+// db/schema.ts), instead of inserting a duplicate. Escalates priority only —
+// never downgrades — and deliberately leaves SLA clocks untouched (they're
+// snapshotted once, same invariant as triageTicket/createTicket above).
+export async function foldIngestRecurrence(db: Db, ticketId: string, input: FoldIngestRecurrenceInput): Promise<void> {
+	const ticket = await db.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId)).get();
+	if (!ticket) throw new Error('ticket not found');
+
+	const now = Math.floor(Date.now() / 1000);
+	const currentPriority = ticket.priority as Priority; // always set — integration tickets require a priority at creation
+	const escalated = PRIORITIES.indexOf(input.priority) < PRIORITIES.indexOf(currentPriority);
+
+	const updates: Partial<typeof schema.tickets.$inferInsert> = { updatedAt: now };
+	if (escalated) updates.priority = input.priority;
+
+	await db.update(schema.tickets).set(updates).where(eq(schema.tickets.id, ticketId));
+
+	if (input.noteResourceId) {
+		const body = escalated
+			? `Ingest re-fired for this ticket — priority escalated from ${currentPriority} to ${input.priority}.`
+			: `Ingest re-fired for this ticket — priority unchanged (${currentPriority}).`;
+		await addNote(db, { ticketId, resourceId: input.noteResourceId, body, visibility: 'internal' });
+	}
 }
 
 // The concrete enforcement of "a ticket cannot leave Triage without a

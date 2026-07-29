@@ -429,8 +429,16 @@ export const tickets = sqliteTable(
 	(t) => [
 		// Unique only when both are non-null (SQLite treats NULLs as distinct in
 		// a unique index) — dedup scope is per-integration, doesn't collide
-		// across keys or against manually-created tickets.
-		uniqueIndex('tickets_ingest_dedup').on(t.ingestApiKeyId, t.externalRef)
+		// across keys or against manually-created tickets. Partial: only
+		// enforced while the ticket is still open, so a closed ticket's
+		// externalRef no longer blocks a new ticket for the same external
+		// reference (e.g. an alert recurring after resolution). 'resolved'
+		// deliberately still counts as blocking — a resolved ticket can still
+		// reopen (see TRANSITIONS in lib/sla.ts), so a re-fire folds into it
+		// rather than bypassing it (see foldIngestRecurrence in tickets.ts).
+		uniqueIndex('tickets_ingest_dedup')
+			.on(t.ingestApiKeyId, t.externalRef)
+			.where(sql`${t.status} != 'closed'`)
 	]
 );
 

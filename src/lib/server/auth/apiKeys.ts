@@ -18,6 +18,12 @@ export interface VerifiedApiKey {
 	name: string;
 	defaultIssueTypeId: string | null;
 	defaultSubIssueTypeId: string | null;
+	// Admin who created the key — reused as the author of ingest-recurrence
+	// notes (see foldIngestRecurrence in lib/server/tickets.ts). A known
+	// simplification, not a permanent "who wrote this note" model: it
+	// attributes every recurrence note to whoever created the key, not to
+	// "the integration" itself.
+	createdBy: string | null;
 }
 
 export async function verifyApiKey(db: Db, rawKey: string | undefined | null): Promise<VerifiedApiKey | null> {
@@ -41,6 +47,7 @@ export async function verifyApiKey(db: Db, rawKey: string | undefined | null): P
 		id: row.id,
 		name: row.name,
 		defaultIssueTypeId: row.defaultIssueTypeId,
-		defaultSubIssueTypeId: row.defaultSubIssueTypeId
+		defaultSubIssueTypeId: row.defaultSubIssueTypeId,
+		createdBy: row.createdBy
 	};
 }

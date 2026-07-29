@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { verifyApiKey } from '$lib/server/auth/apiKeys';
-import { createTicket } from '$lib/server/tickets';
+import { createTicket, foldIngestRecurrence } from '$lib/server/tickets';
 import { PRIORITIES, type Priority } from '$lib/sla';
 
 function bearerToken(request: Request): string | null {
@@ -109,15 +109,27 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		subIssueType = { id: key.defaultSubIssueTypeId };
 	}
 
-	// Dedup: retrying a push with the same externalRef returns the existing
-	// ticket instead of creating a duplicate — safe for the caller to retry.
+	// Dedup: retrying a push with the same externalRef while the prior ticket
+	// is still open (anything short of 'closed' — see the partial
+	// tickets_ingest_dedup index in db/schema.ts) folds into that ticket
+	// instead of creating a duplicate. Once the prior ticket is closed, the
+	// same externalRef is free to start a new one (e.g. a recurring alert).
 	if (body.externalRef) {
-		const existing = await db
+		const existingOpen = await db
 			.select({ id: schema.tickets.id, ticketNumber: schema.tickets.ticketNumber })
 			.from(schema.tickets)
-			.where(and(eq(schema.tickets.ingestApiKeyId, key.id), eq(schema.tickets.externalRef, body.externalRef)))
+			.where(
+				and(
+					eq(schema.tickets.ingestApiKeyId, key.id),
+					eq(schema.tickets.externalRef, body.externalRef),
+					ne(schema.tickets.status, 'closed')
+				)
+			)
 			.get();
-		if (existing) return json({ id: existing.id, ticketNumber: existing.ticketNumber }, { status: 200 });
+		if (existingOpen) {
+			await foldIngestRecurrence(db, existingOpen.id, { priority, noteResourceId: key.createdBy });
+			return json({ id: existingOpen.id, ticketNumber: existingOpen.ticketNumber }, { status: 200 });
+		}
 	}
 
 	const ticket = await createTicket(db, {

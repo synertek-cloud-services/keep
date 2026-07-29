@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env } from 'cloudflare:test';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { applyMigrationsForTest } from './db/testMigrate';
 import * as schema from './db/schema';
 import {
 	addTimeEntry,
 	createTicket,
+	foldIngestRecurrence,
 	markClientReplied,
 	setStatus,
 	triageTicket,
@@ -296,5 +297,158 @@ describe('setStatus', () => {
 		row = await db.select().from(schema.tickets).where(eq(schema.tickets.id, ticket.id)).get();
 		expect(row?.resolvedAt).toBeNull();
 		expect(row?.closedAt).toBeNull();
+	});
+});
+
+// tickets_ingest_dedup (db/schema.ts) is a partial unique index on
+// (ingest_api_key_id, external_ref) scoped to status != 'closed'. These tests
+// exercise both edges of that boundary against the real D1 constraint, not
+// just the app-level query, plus foldIngestRecurrence's escalate-only
+// priority behavior.
+describe('ingest dedup: partial unique index + foldIngestRecurrence', () => {
+	let apiKeyId: string;
+	let noteAuthorId: string;
+
+	beforeAll(async () => {
+		const now = Math.floor(Date.now() / 1000);
+		noteAuthorId = crypto.randomUUID();
+		await db.insert(schema.users).values({
+			id: noteAuthorId,
+			email: 'apikey-owner@test.local',
+			role: 'admin',
+			authSource: 'local',
+			createdAt: now,
+			updatedAt: now
+		});
+		apiKeyId = crypto.randomUUID();
+		await db.insert(schema.apiKeys).values({
+			id: apiKeyId,
+			name: 'Test Integration',
+			keyHash: crypto.randomUUID(),
+			createdBy: noteAuthorId,
+			createdAt: now
+		});
+	});
+
+	function findOpenByRef(externalRef: string) {
+		return db
+			.select({ id: schema.tickets.id })
+			.from(schema.tickets)
+			.where(
+				and(
+					eq(schema.tickets.ingestApiKeyId, apiKeyId),
+					eq(schema.tickets.externalRef, externalRef),
+					ne(schema.tickets.status, 'closed')
+				)
+			)
+			.get();
+	}
+
+	it('first ingest creates a ticket', async () => {
+		const ticket = await createTicket(db, {
+			title: 'Alert fired',
+			companyId,
+			source: 'integration',
+			priority: 'medium',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-created'
+		});
+		expect(ticket.status).toBe('new');
+		expect(ticket.priority).toBe('medium');
+	});
+
+	it('a re-ingest while the ticket is still open folds in: escalates priority and leaves a note', async () => {
+		const ticket = await createTicket(db, {
+			title: 'Alert fired',
+			companyId,
+			source: 'integration',
+			priority: 'medium',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-open'
+		});
+
+		const existingOpen = await findOpenByRef('alert-open');
+		expect(existingOpen?.id).toBe(ticket.id);
+
+		await foldIngestRecurrence(db, ticket.id, { priority: 'critical', noteResourceId: noteAuthorId });
+
+		const updated = await db.select().from(schema.tickets).where(eq(schema.tickets.id, ticket.id)).get();
+		expect(updated?.priority).toBe('critical');
+		expect(updated?.status).toBe('new'); // fold never changes status
+
+		const notes = await db.select().from(schema.notes).where(eq(schema.notes.ticketId, ticket.id)).all();
+		expect(notes).toHaveLength(1);
+		expect(notes[0].resourceId).toBe(noteAuthorId);
+		expect(notes[0].body).toContain('escalated');
+	});
+
+	it('a lower-severity re-fire folds in without downgrading priority', async () => {
+		const ticket = await createTicket(db, {
+			title: 'Alert fired',
+			companyId,
+			source: 'integration',
+			priority: 'critical',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-no-downgrade'
+		});
+
+		await foldIngestRecurrence(db, ticket.id, { priority: 'low', noteResourceId: noteAuthorId });
+
+		const updated = await db.select().from(schema.tickets).where(eq(schema.tickets.id, ticket.id)).get();
+		expect(updated?.priority).toBe('critical');
+	});
+
+	it('a resolved (not yet closed) ticket still blocks/folds — the DB constraint rejects a second insert', async () => {
+		const ticket = await createTicket(db, {
+			title: 'Alert fired',
+			companyId,
+			source: 'integration',
+			priority: 'medium',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-resolved'
+		});
+		await setStatus(db, ticket.id, 'resolved');
+
+		// App-level lookup still finds it as "open" for dedup purposes.
+		const existingOpen = await findOpenByRef('alert-resolved');
+		expect(existingOpen?.id).toBe(ticket.id);
+
+		// And the partial unique index itself still enforces this at the DB
+		// level, independent of the app-level check.
+		await expect(
+			createTicket(db, {
+				title: 'Duplicate while resolved',
+				companyId,
+				source: 'integration',
+				priority: 'medium',
+				ingestApiKeyId: apiKeyId,
+				externalRef: 'alert-resolved'
+			})
+		).rejects.toThrow();
+	});
+
+	it('a closed ticket no longer blocks — a new ticket can be created for the same externalRef', async () => {
+		const first = await createTicket(db, {
+			title: 'Alert fired',
+			companyId,
+			source: 'integration',
+			priority: 'medium',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-recurs'
+		});
+		await setStatus(db, first.id, 'resolved');
+		await setStatus(db, first.id, 'closed');
+
+		expect(await findOpenByRef('alert-recurs')).toBeUndefined();
+
+		const second = await createTicket(db, {
+			title: 'Alert recurred',
+			companyId,
+			source: 'integration',
+			priority: 'medium',
+			ingestApiKeyId: apiKeyId,
+			externalRef: 'alert-recurs'
+		});
+		expect(second.id).not.toBe(first.id);
 	});
 });
